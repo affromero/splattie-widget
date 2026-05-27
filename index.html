@@ -89,9 +89,26 @@
     font: inherit; font-weight: bold; cursor: pointer; font-size: 0.75rem;
   }
   .export-btn:hover { opacity: 0.9; }
+
+  .drop-zone {
+    position: absolute; inset: 0; z-index: 50;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(10, 10, 15, 0.85);
+    border: 3px dashed #7eb8f0; border-radius: 8px; margin: 0.5rem;
+  }
+  .drop-zone.active { display: flex; }
+  .drop-zone span { color: #7eb8f0; font-size: 1rem; pointer-events: none; }
+
+  .upload-btn {
+    width: 100%; padding: 0.35rem; margin-bottom: 0.5rem;
+    background: none; border: 1px solid #2a2a3a;
+    color: #555; font: inherit; font-size: 0.6rem; cursor: pointer;
+  }
+  .upload-btn:hover { color: #7eb8f0; border-color: #7eb8f0; }
 </style></head>
 <body>
-  <div class="main">
+  <div class="main" id="drop-target">
+    <div class="drop-zone" id="drop-zone"><span>Drop .splattie here</span></div>
     <splattie-widget
       id="widget"
       src="/andres.ply"
@@ -109,8 +126,10 @@
     import './src/index.ts';
     import * as JSZip from 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm';
 
-    const widget = document.getElementById('widget');
+    let widget = document.getElementById('widget');
     const panel = document.getElementById('panel');
+    const dropTarget = document.getElementById('drop-target');
+    const dropZone = document.getElementById('drop-zone');
 
     let config = null;
     let defaults = null;
@@ -118,21 +137,80 @@
     const configured = new Set();
     const collapsed = new Set();
 
-    widget.addEventListener('splatload', async () => {
-      config = await fetch('/states.json').then(r => r.json());
-      defaults = JSON.parse(JSON.stringify(config));
-      buildPanel();
+    // Drag and drop .splattie
+    dropTarget.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('active'); });
+    dropTarget.addEventListener('dragleave', (e) => { if (e.target === dropTarget || e.target === dropZone) dropZone.classList.remove('active'); });
+    dropTarget.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('active');
+      const file = [...e.dataTransfer.files].find(f => f.name.endsWith('.splattie'));
+      if (file) loadSplattieFile(file);
+    });
 
+    function loadSplattieFile(file) {
+      const url = URL.createObjectURL(file);
+      const old = widget;
+      const el = document.createElement('splattie-widget');
+      el.id = 'widget';
+      el.setAttribute('src', url);
+      el.setAttribute('background', '#0e0e14');
+      el.setAttribute('width', '100%');
+      el.setAttribute('height', '100%');
+      el.style.flex = '1';
+      old.replaceWith(el);
+      widget = el;
+      widget.addEventListener('splatload', onWidgetLoad, { once: true });
+    }
+
+    function onWidgetLoad() {
+      if (widget._stateMachine) {
+        const sm = widget._stateMachine;
+        config = { version: 1, defaults: { camera: { theta: 0, phi: 75, radius: 0.5, fov: 60 } }, states: {}, transitions: {} };
+        for (const name of Object.keys(sm.states || {})) {
+          config.states[name] = JSON.parse(JSON.stringify(sm.states[name]));
+        }
+        config.transitions = JSON.parse(JSON.stringify(sm.transitions || {}));
+      } else {
+        config = { version: 1, defaults: { camera: { theta: 0, phi: 75, radius: 0.5, fov: 60 } },
+          states: { idle: {}, hover: {}, click: {} }, transitions: {} };
+      }
+      defaults = JSON.parse(JSON.stringify(config));
+      currentState = 'idle';
+      configured.clear();
+      buildPanel();
+      startLiveIndicator();
+    }
+
+    function startLiveIndicator() {
       setInterval(() => {
         const live = widget._stateMachine?.activeStateName;
         document.querySelectorAll('.state-btn').forEach(btn => {
           btn.classList.toggle('live', btn.textContent === live);
         });
       }, 200);
+    }
+
+    widget.addEventListener('splatload', async () => {
+      config = await fetch('/states.json').then(r => r.json());
+      defaults = JSON.parse(JSON.stringify(config));
+      buildPanel();
+      startLiveIndicator();
     });
 
     function buildPanel() {
       panel.innerHTML = '';
+
+      const uploadBtn = document.createElement('button');
+      uploadBtn.className = 'upload-btn';
+      uploadBtn.textContent = 'Upload .splattie';
+      uploadBtn.onclick = () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.splattie';
+        input.onchange = () => { if (input.files[0]) loadSplattieFile(input.files[0]); };
+        input.click();
+      };
+      panel.appendChild(uploadBtn);
 
       const statesDiv = document.createElement('div');
       statesDiv.className = 'states';

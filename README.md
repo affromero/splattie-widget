@@ -51,16 +51,125 @@ import '@affromero/splattie-widget';
 
 ## The `.splattie` Format
 
-A single ZIP file containing everything the widget needs:
+> **v0.x - experimental.** The core splat + bone files follow established standards (PLY, FLAME). The expression basis and states format may evolve. Breaking changes will bump the minor version.
+
+A ZIP file containing everything the widget needs. All files except the splat data are optional - the widget degrades gracefully.
 
 ```
 avatar.splattie
-├── model.ply                 # 20K gaussian splats (or .spz)
-├── bone_tree.json            # 5 FLAME skeleton bones
-├── lbs_weight_20k.json       # Per-splat LBS weights
-├── expression_basis.bin      # FLAME blendshape basis (10+ PCA coefficients)
-└── states.json               # Interaction state definitions
+├── *.ply or *.spz            # (required) Gaussian splats
+├── bone_tree.json            # (optional) Skeleton for skinning
+├── lbs_weight_20k.json       # (optional) Per-splat bone weights
+├── expression_basis.bin       # (optional) Blendshape basis
+└── states.json               # (optional) Interaction states
 ```
+
+### File Reference
+
+#### Splat data (`.ply` or `.spz`)
+
+Standard 3DGS format. Each splat has position (x,y,z), scale, rotation, opacity, and spherical harmonics color. The widget auto-detects PLY vs SPZ from the file header.
+
+- **Source**: any 3DGS method (LAM, DreamGaussian, InstantSplat, etc.)
+- **Stability**: standard format, unlikely to change
+
+#### `bone_tree.json` - Skeleton
+
+Hierarchical bone tree with positions. Currently 5 FLAME bones: root, neck, jaw, leftEye, rightEye. The widget uses these for SplatSkinning (dual quaternion mode).
+
+```json
+{
+  "bones": [{
+    "name": "root",
+    "position": [x, y, z],
+    "children": [{
+      "name": "neck",
+      "position": [x, y, z],
+      "children": [
+        { "name": "jaw", "position": [x, y, z] },
+        { "name": "leftEye", "position": [x, y, z] },
+        { "name": "rightEye", "position": [x, y, z] }
+      ]
+    }]
+  }]
+}
+```
+
+- **Source**: FLAME model via `export_expression_basis.py`, or any skeleton with named bones
+- **Stability**: stable structure, bone names are conventions not hard requirements
+- **Without it**: no skinning, no eye tracking, no jaw animation
+
+#### `lbs_weight_20k.json` - Bone Weights
+
+2D array of linear blend skinning weights, shape `[num_splats][num_bones]`. Each row sums to ~1.0. The widget selects the top 4 bones per splat.
+
+```json
+[[0.8, 0.1, 0.05, 0.03, 0.02], ...]
+```
+
+- **Source**: FLAME model (upsampled to match splat count)
+- **Stability**: stable, standard LBS format
+- **Without it**: bones exist but nothing moves
+
+#### `expression_basis.bin` - Blendshape Basis
+
+Binary file with per-splat position displacements for each expression coefficient. Enables facial expressions that move all splats coherently (smile, lip shapes, etc.).
+
+```
+Header: "EXPR" (4 bytes) + num_vertices (uint32 LE) + num_expressions (uint32 LE)
+Data:   float32 LE array, shape (num_vertices, num_expressions, 3)
+```
+
+Optional sidecar `expression_basis.json` maps indices to semantic labels:
+```json
+{ "labels": ["jawDown", "lipsUp", "lipsL", ...], "num_expressions": 50 }
+```
+
+- **Source**: `export_expression_basis.py` on a machine with FLAME model weights
+- **Stability**: experimental format, may add compression or quantization
+- **Without it**: no FLAME blendshape deformation (bone-driven expressions still work)
+
+#### `states.json` - Interaction States
+
+Defines what happens on idle, hover, click. Each state sets all 5 dimensions.
+
+```json
+{
+  "version": 1,
+  "defaults": {
+    "camera": { "theta": 0, "phi": 75, "radius": 0.5, "fov": 60 },
+    "autoBlink": { "interval": [2000, 7000], "duration": 150 }
+  },
+  "states": {
+    "idle": {
+      "ghost": { "amplitude": 0.003, "frequency": 0.4, "wobble": 0.2 },
+      "expression": { "jawOpen": 0, "smile": 0, ... },
+      "camera": { "theta": 0, "phi": 75, "radius": 0.5, "fov": 60 },
+      "rotation": [0, 0, 0],
+      "tracking": { "eyes": 1.0, "head": 0.1 }
+    },
+    "hover": { ... },
+    "click": { ... }
+  },
+  "transitions": {
+    "idle->hover": { "duration": 0.3, "easing": "ease-out" },
+    "hover->idle": { "duration": 0.5, "easing": "ease-in" },
+    "*->click": { "duration": 0.1, "easing": "snap" }
+  }
+}
+```
+
+- **Source**: visual editor at `npm run dev`, or hand-authored
+- **Stability**: most likely to evolve as dimensions/features are added
+- **Without it**: uses sensible defaults (eyes track cursor, gentle float, auto-blink)
+
+### Creating Your Own `.splattie`
+
+**Easiest**: use the visual editor (`npm run dev`), adjust sliders, click "Download .splattie".
+
+**From scratch**: ZIP any combination of the files above. At minimum you need a `.ply` or `.spz`. The widget works with just splat data (static render) and adds features as it finds more files in the bundle.
+
+**From a photo**: run LAM on a GPU server to generate the splat + FLAME data, then bundle with the export script. See the [Splattie repo](https://github.com/affromero/splattie) for the full pipeline.
 
 Design states in the visual editor, export as `.splattie`, embed anywhere.
 

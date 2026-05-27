@@ -37,6 +37,13 @@ function computeVirtualBones(bones: BoneInfo[]): BoneInfo[] {
   ];
 }
 
+async function parseSplatPositions(url: string): Promise<Float32Array> {
+  if (url.endsWith('.spz') || url.startsWith('blob:')) {
+    return parsePlyPositions(url).catch(() => new Float32Array(0));
+  }
+  return parsePlyPositions(url);
+}
+
 async function parsePlyPositions(url: string): Promise<Float32Array> {
   const res = await fetch(url);
   const buffer = await res.arrayBuffer();
@@ -146,7 +153,7 @@ export async function createSparkInstance(
     const [boneTree, lbsWeights, splatPositions] = await Promise.all([
       fetch(boneTreeUrl).then((r) => r.json()),
       fetch(lbsWeightsUrl).then((r) => r.json()),
-      parsePlyPositions(splatUrl),
+      parseSplatPositions(splatUrl),
     ]) as [{ bones: Array<{ name: string; position: number[]; children?: unknown[] }> }, number[][], Float32Array];
 
     function flattenBones(

@@ -18,6 +18,10 @@
 
 ---
 
+<p align="center">
+  <img src="demo.gif" alt="Splattie Widget Demo" width="600" />
+</p>
+
 A web component that makes gaussian splats **reactive**. Upload a 3D head, define interaction states, and embed it anywhere with a single tag. Eyes follow the cursor, face reacts to hover and click, expressions transition smoothly — all client-side at 60fps.
 
 **See it live at [afromero.co](https://afromero.co)** — the circular avatar in the corner is a `<splattie-widget>`.

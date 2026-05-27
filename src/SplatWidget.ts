@@ -62,7 +62,7 @@ export class SplatWidget extends HTMLElement {
       let basisBlobUrl: string | undefined;
       let statesConfig: Partial<WidgetConfig> | undefined;
 
-      if (src.endsWith('.splattie')) {
+      if (src.includes('.splattie')) {
         const { default: JSZip } = await import('jszip');
         const res = await fetch(src);
         const zip = await JSZip.loadAsync(await res.arrayBuffer());

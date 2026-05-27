@@ -148,7 +148,7 @@
     });
 
     function loadSplattieFile(file) {
-      const url = URL.createObjectURL(file);
+      const url = URL.createObjectURL(file) + '#.splattie';
       const old = widget;
       const el = document.createElement('splattie-widget');
       el.id = 'widget';

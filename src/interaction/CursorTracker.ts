@@ -5,6 +5,9 @@ export class CursorTracker {
   clientY = 0;
   isOnPage = false;
   private element: HTMLElement | null = null;
+  private useGyro = false;
+  private baseBeta: number | null = null;
+  private baseGamma: number | null = null;
 
   attach(element: HTMLElement): void {
     this.element = element;
@@ -12,6 +15,11 @@ export class CursorTracker {
     document.addEventListener('pointerleave', this.onLeave);
     document.addEventListener('pointerup', this.onPointerUp);
     document.addEventListener('pointercancel', this.onPointerUp);
+
+    if ('ontouchstart' in window && window.DeviceOrientationEvent) {
+      this.useGyro = true;
+      window.addEventListener('deviceorientation', this.onGyro);
+    }
   }
 
   detach(): void {
@@ -19,6 +27,7 @@ export class CursorTracker {
     document.removeEventListener('pointerleave', this.onLeave);
     document.removeEventListener('pointerup', this.onPointerUp);
     document.removeEventListener('pointercancel', this.onPointerUp);
+    window.removeEventListener('deviceorientation', this.onGyro);
     this.element = null;
   }
 
@@ -37,16 +46,36 @@ export class CursorTracker {
   };
 
   private onLeave = (): void => {
-    this.isOnPage = false;
-    this.ndcX = 0;
-    this.ndcY = 0;
-  };
-
-  private onPointerUp = (e: PointerEvent): void => {
-    if (e.pointerType === 'touch') {
+    if (!this.useGyro) {
       this.isOnPage = false;
       this.ndcX = 0;
       this.ndcY = 0;
     }
+  };
+
+  private onPointerUp = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch' && !this.useGyro) {
+      this.isOnPage = false;
+      this.ndcX = 0;
+      this.ndcY = 0;
+    }
+  };
+
+  private onGyro = (e: DeviceOrientationEvent): void => {
+    if (e.beta === null || e.gamma === null) return;
+
+    if (this.baseBeta === null) {
+      this.baseBeta = e.beta;
+      this.baseGamma = e.gamma;
+    }
+
+    // gamma = left/right tilt (-90 to 90), maps to X
+    // beta = front/back tilt (0 to 180), maps to Y
+    const dx = (e.gamma - (this.baseGamma ?? 0)) / 30;
+    const dy = -(e.beta - (this.baseBeta ?? 0)) / 25;
+
+    this.ndcX = Math.max(-1, Math.min(1, dx));
+    this.ndcY = Math.max(-1, Math.min(1, dy));
+    this.isOnPage = true;
   };
 }

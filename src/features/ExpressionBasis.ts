@@ -22,6 +22,7 @@ export interface ExprBasisData {
   numVertices: number;
   numExpressions: number;
   basis: Float32Array;
+  labels: string[];
 }
 
 export async function loadExpressionBasis(url: string): Promise<ExprBasisData> {
@@ -37,7 +38,14 @@ export async function loadExpressionBasis(url: string): Promise<ExprBasisData> {
   const numExpressions = header.getUint32(8, true);
   const basis = new Float32Array(buf, 12);
 
-  return { numVertices, numExpressions, basis };
+  let labels = Array.from({ length: numExpressions }, (_, i) => `expr_${i}`);
+  try {
+    const jsonUrl = url.replace(/\.bin$/, '.json');
+    const meta = await fetch(jsonUrl).then(r => r.json());
+    if (meta.labels?.length === numExpressions) labels = meta.labels;
+  } catch { /* sidecar optional */ }
+
+  return { numVertices, numExpressions, basis, labels };
 }
 
 export class ExpressionBasisApplier {
@@ -71,10 +79,10 @@ export class ExpressionBasisApplier {
     weights: Record<string, number>,
     scale: number = 3.0,
   ): boolean {
-    const { basis, numExpressions } = this.basis;
+    const { basis, numExpressions, labels } = this.basis;
     const w = new Float32Array(numExpressions);
     for (let j = 0; j < numExpressions; j++) {
-      w[j] = (weights[`expr_${j}`] ?? 0) * scale;
+      w[j] = (weights[labels[j]] ?? weights[`expr_${j}`] ?? 0) * scale;
     }
 
     let changed = false;

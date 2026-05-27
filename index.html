@@ -210,11 +210,14 @@
       addSection('flame blendshapes', () => {
         if (!state.expression) state.expression = {};
         if (!def.expression) def.expression = {};
-        for (let i = 0; i < 10; i++) {
-          const key = `expr_${i}`;
+        const basis = widget.exprBasis?.basis;
+        const labels = basis?.labels ?? [];
+        const n = basis?.numExpressions ?? 10;
+        for (let i = 0; i < n; i++) {
+          const key = labels[i] ?? `expr_${i}`;
           if (state.expression[key] === undefined) state.expression[key] = def.expression[key] || 0;
           if (def.expression[key] === undefined) def.expression[key] = 0;
-          addSlider(`expr ${i}`, state.expression, key, -2, 2, 0.01, undefined, def.expression[key]);
+          addSlider(key, state.expression, key, -2, 2, 0.01, undefined, def.expression[key]);
         }
       });
 

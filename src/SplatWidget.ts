@@ -124,6 +124,14 @@ export class SplatWidget extends HTMLElement {
     }
   }
 
+  attributeChangedCallback(name: string, _old: string | null, value: string | null): void {
+    if (name === 'background' && value && this.spark) {
+      const color = parseInt(value.replace('#', ''), 16);
+      this.spark.renderer.setClearColor(color);
+      this.hitDetector.setBackgroundColor(color);
+    }
+  }
+
   disconnectedCallback(): void {
     this.spark?.renderer.dispose();
     this.spark = null;

@@ -26,6 +26,12 @@ export class HitDetector {
 
     if (px < 0 || py < 0) return false;
 
+    // Reject hits outside circular boundary (for circular clip-path containers)
+    const cx = clientX - canvasWidth / 2;
+    const cy = clientY - canvasHeight / 2;
+    const r = Math.min(canvasWidth, canvasHeight) / 2;
+    if (cx * cx + cy * cy > r * r) return false;
+
     gl.readPixels(px, py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.pixel);
 
     const diff =

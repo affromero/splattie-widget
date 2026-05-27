@@ -161,7 +161,7 @@ Most likely to evolve. Without it: sensible defaults (eyes track, gentle float, 
 
 **From scratch**: ZIP a `.ply` with any combination of the optional files.
 
-**From a photo**: run [LAM](https://github.com/aigc3d/LAM) on a GPU, then bundle with the export script. See the [full pipeline](https://github.com/affromero/splattie).
+**From a photo**: run [LAM](https://github.com/aigc3d/LAM) on a GPU, then bundle with the export script. Try it at [splattie.app](https://splattie.app).
 
 ## Five Dimensions of State
 

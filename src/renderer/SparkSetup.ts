@@ -237,7 +237,7 @@ export async function createSparkInstance(
   let packedArray: Uint32Array | null = null;
   let packedSplatsRef: { needsUpdate: boolean } | null = null;
 
-  const meshAny = splatMesh as Record<string, unknown>;
+  const meshAny = splatMesh as unknown as Record<string, unknown>;
   const ps = meshAny.packedSplats as { packedArray?: Uint32Array; needsUpdate?: boolean } | undefined;
   if (ps?.packedArray) {
     packedArray = ps.packedArray;

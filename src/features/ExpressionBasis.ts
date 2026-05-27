@@ -1,5 +1,5 @@
 /**
- * FLAME expression blendshape basis — loads the binary exported by
+ * FLAME expression blendshape basis - loads the binary exported by
  * export_expression_basis.py and applies per-splat position offsets
  * directly to Spark's PackedSplats buffer (half-float encoding).
  */

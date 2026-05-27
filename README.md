@@ -4,7 +4,7 @@
 
 # splattie-widget
 
-**Interactive 3D Gaussian Splatting — like Rive/Lottie for 3D**
+**Interactive 3D Gaussian Splatting - like Rive/Lottie for 3D**
 
 [![npm](https://img.shields.io/npm/v/@affromero/splattie-widget?color=blue)](https://www.npmjs.com/package/@affromero/splattie-widget)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -22,9 +22,9 @@
   <img src="demo.gif" alt="Splattie Widget Demo" width="600" />
 </p>
 
-A web component that makes gaussian splats **reactive**. Upload a 3D head, define interaction states, and embed it anywhere with a single tag. Eyes follow the cursor, face reacts to hover and click, expressions transition smoothly — all client-side at 60fps.
+A web component that makes gaussian splats **reactive**. Upload a 3D head, define interaction states, and embed it anywhere with a single tag. Eyes follow the cursor, face reacts to hover and click, expressions transition smoothly - all client-side at 60fps.
 
-**See it live at [afromero.co](https://afromero.co)** — the circular avatar in the corner is a `<splattie-widget>`.
+**See it live at [afromero.co](https://afromero.co)** - the circular avatar in the corner is a `<splattie-widget>`.
 
 ## Quick Start
 
@@ -137,11 +137,11 @@ npm run dev  # http://localhost:4002
 
 ## How It Works
 
-Built on **[Spark 2.0](https://github.com/sparkjsdev/spark)** (MIT, by World Labs) — a Three.js-based 3D Gaussian Splatting renderer. The widget adds:
+Built on **[Spark 2.0](https://github.com/sparkjsdev/spark)** (MIT, by World Labs) - a Three.js-based 3D Gaussian Splatting renderer. The widget adds:
 
 1. **State machine** with per-dimension interpolation (lerp, slerp, ease curves)
 2. **SplatSkinning** (dual quaternion) driving 5 FLAME bones from expression + cursor data
-3. **Expression basis** — per-splat position offsets written directly to Spark's packed buffer (half-float encoding, ~20K splats/frame)
+3. **Expression basis** - per-splat position offsets written directly to Spark's packed buffer (half-float encoding, ~20K splats/frame)
 4. **Hit detection** via `readPixels` after render (pixel-perfect, no raycasting needed)
 5. **Auto-blink** with randomized interval and sine-curve eyelid animation via SplatEdit
 
@@ -155,10 +155,10 @@ Works in Chrome, Firefox, Safari, and Edge. Requires WebGL 2. No COOP/COEP heade
 
 ## Acknowledgements
 
-- **[LAM](https://github.com/aigc3d/LAM)** (SIGGRAPH 2025) — Single-image 3DGS head generation by Zixuan Zeng et al. and the AIGC3D team
-- **[FLAME](https://flame.is.tue.mpg.de/)** — Learned 3D face model by Tianye Li, Timo Bolkart, Michael J. Black, Hao Li, Javier Romero
-- **[Spark 2.0](https://github.com/sparkjsdev/spark)** — 3DGS renderer by World Labs (MIT)
-- **[3D Gaussian Splatting](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)** — Kerbl, Kopanas, Leimkühler, Drettakis (INRIA)
+- **[LAM](https://github.com/aigc3d/LAM)** (SIGGRAPH 2025) - Single-image 3DGS head generation by Zixuan Zeng et al. and the AIGC3D team
+- **[FLAME](https://flame.is.tue.mpg.de/)** - Learned 3D face model by Tianye Li, Timo Bolkart, Michael J. Black, Hao Li, Javier Romero
+- **[Spark 2.0](https://github.com/sparkjsdev/spark)** - 3DGS renderer by World Labs (MIT)
+- **[3D Gaussian Splatting](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)** - Kerbl, Kopanas, Leimkühler, Drettakis (INRIA)
 
 ## License
 

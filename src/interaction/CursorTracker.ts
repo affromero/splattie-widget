@@ -17,8 +17,7 @@ export class CursorTracker {
     document.addEventListener('pointercancel', this.onPointerUp);
 
     if ('ontouchstart' in window && window.DeviceOrientationEvent) {
-      this.useGyro = true;
-      window.addEventListener('deviceorientation', this.onGyro);
+      this.requestGyro();
     }
   }
 
@@ -60,6 +59,20 @@ export class CursorTracker {
       this.ndcY = 0;
     }
   };
+
+  private async requestGyro(): Promise<void> {
+    const DOE = DeviceOrientationEvent as unknown as {
+      requestPermission?: () => Promise<string>;
+    };
+    if (DOE.requestPermission) {
+      try {
+        const result = await DOE.requestPermission();
+        if (result !== 'granted') return;
+      } catch { return; }
+    }
+    this.useGyro = true;
+    window.addEventListener('deviceorientation', this.onGyro);
+  }
 
   private onGyro = (e: DeviceOrientationEvent): void => {
     if (e.beta === null || e.gamma === null) return;

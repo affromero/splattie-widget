@@ -193,7 +193,7 @@ export class SplatWidget extends HTMLElement {
         this.applySkinning(this.spark.skinning, this.spark.bones, frame);
       }
 
-      // Expression basis — per-splat position offsets from FLAME blendshapes
+      // Expression basis - per-splat position offsets from FLAME blendshapes
       if (this.exprBasis && this.spark.packedArray && this.spark.packedSplatsRef) {
         const updated = this.exprBasis.apply(this.spark.packedArray, frame.expression);
         if (updated) this.spark.packedSplatsRef.needsUpdate = true;
@@ -250,7 +250,7 @@ export class SplatWidget extends HTMLElement {
 
     const tracking = frame.tracking;
 
-    // Neck (bone 1) — computed first so children inherit its rotation
+    // Neck (bone 1) - computed first so children inherit its rotation
     const exprNeckPitch = frame.expression.neckTilt ?? 0;
     const exprNeckYaw = frame.expression.neckYaw ?? 0;
     const exprNeckRoll = frame.expression.neckRoll ?? 0;
@@ -264,7 +264,7 @@ export class SplatWidget extends HTMLElement {
       sk.setBoneQuatPos(1, neckQ, new THREE.Vector3(...bones[1].pos));
     }
 
-    // Eyes (bones 3, 4) — cursor tracking + gaze offset, inherits neck rotation
+    // Eyes (bones 3, 4) - cursor tracking + gaze offset, inherits neck rotation
     const gazeX = frame.expression.gazeX ?? 0;
     const gazeY = frame.expression.gazeY ?? 0;
     const clampedX = Math.max(-1, Math.min(1, this.cursor.ndcX));
@@ -280,7 +280,7 @@ export class SplatWidget extends HTMLElement {
       sk.setBoneQuatPos(eyeIdx, q, new THREE.Vector3(...bones[eyeIdx].pos));
     }
 
-    // Jaw (bone 2) — expression jawOpen only, inherits neck rotation
+    // Jaw (bone 2) - expression jawOpen only, inherits neck rotation
     if (bones.length > 2) {
       const jawAngle = frame.expression.jawOpen ?? 0;
       const localJaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), jawAngle);
@@ -288,7 +288,7 @@ export class SplatWidget extends HTMLElement {
       sk.setBoneQuatPos(2, jq, new THREE.Vector3(...bones[2].pos));
     }
 
-    // Virtual bones — translate from rest position to simulate expressions
+    // Virtual bones - translate from rest position to simulate expressions
     for (const bone of bones) {
       if (!bone.virtual) continue;
       const rest = new THREE.Vector3(...bone.pos);

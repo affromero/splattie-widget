@@ -138,13 +138,13 @@ export class SplatWidget extends HTMLElement {
 
     const leftSdf = new SplatEditSdf({
       type: SplatEditSdfType.SPHERE,
-      radius: 0.015,
+      radius: 0.02,
     });
     leftSdf.position.set(leftEyePos[0], leftEyePos[1], leftEyePos[2]);
 
     const rightSdf = new SplatEditSdf({
       type: SplatEditSdfType.SPHERE,
-      radius: 0.015,
+      radius: 0.02,
     });
     rightSdf.position.set(rightEyePos[0], rightEyePos[1], rightEyePos[2]);
 

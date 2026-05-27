@@ -92,6 +92,8 @@ export class SplatWidget extends HTMLElement {
         if (configUrl) statesConfig = await fetch(configUrl).then(r => r.json());
       }
 
+      if (!basisBlobUrl) basisBlobUrl = this.getAttribute('expression-basis') ?? undefined;
+
       this.config = statesConfig
         ? (await import('./state/StateConfig')).mergeWithDefaults(statesConfig)
         : createDefaultConfig();

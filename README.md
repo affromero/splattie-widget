@@ -6,7 +6,7 @@
 
 **Interactive 3D Gaussian Splatting - like Rive/Lottie for 3D**
 
-[![npm](https://img.shields.io/npm/v/@affromero/splattie-widget?color=blue)](https://www.npmjs.com/package/@affromero/splattie-widget)
+[![npm](https://img.shields.io/npm/v/@afromero/splattie-widget?color=blue)](https://www.npmjs.com/package/@afromero/splattie-widget)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![Spark](https://img.shields.io/badge/Spark_2.0-MIT-green)](https://github.com/sparkjsdev/spark)
@@ -32,17 +32,17 @@ A web component that makes gaussian splats **reactive**. One file, one tag. Eyes
 
 ```html
 <splattie-widget src="avatar.splattie"></splattie-widget>
-<script type="module" src="https://unpkg.com/@affromero/splattie-widget"></script>
+<script type="module" src="https://unpkg.com/@afromero/splattie-widget"></script>
 ```
 
 Or via npm:
 
 ```bash
-npm install @affromero/splattie-widget
+npm install @afromero/splattie-widget
 ```
 
 ```typescript
-import '@affromero/splattie-widget';
+import '@afromero/splattie-widget';
 ```
 
 ## The `.splattie` Format

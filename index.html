@@ -163,19 +163,15 @@
     }
 
     function onWidgetLoad() {
-      if (widget._stateMachine) {
-        const sm = widget._stateMachine;
-        config = { version: 1, defaults: { camera: { theta: 0, phi: 75, radius: 0.5, fov: 60 } }, states: {}, transitions: {} };
-        for (const name of Object.keys(sm.states || {})) {
-          config.states[name] = JSON.parse(JSON.stringify(sm.states[name]));
-        }
-        config.transitions = JSON.parse(JSON.stringify(sm.transitions || {}));
+      const wConfig = widget.config;
+      if (wConfig) {
+        config = JSON.parse(JSON.stringify(wConfig));
       } else {
         config = { version: 1, defaults: { camera: { theta: 0, phi: 75, radius: 0.5, fov: 60 } },
           states: { idle: {}, hover: {}, click: {} }, transitions: {} };
       }
       defaults = JSON.parse(JSON.stringify(config));
-      currentState = 'idle';
+      currentState = Object.keys(config.states)[0] || 'idle';
       configured.clear();
       buildPanel();
       startLiveIndicator();

@@ -69,10 +69,15 @@ export class SplatWidget extends HTMLElement {
         const files = Object.keys(zip.files);
 
         const find = (pattern: string) => files.find(f => f.includes(pattern));
-        const blobUrl = async (name: string | undefined) =>
-          name ? URL.createObjectURL(await zip.file(name)!.async('blob')) : undefined;
+        const blobUrl = async (name: string | undefined, ext?: string) => {
+          if (!name) return undefined;
+          const blob = await zip.file(name)!.async('blob');
+          return URL.createObjectURL(blob) + (ext ? `#${ext}` : '');
+        };
 
-        splatUrl = await blobUrl(find('.ply') ?? find('.spz')) ?? src;
+        const splatFile = find('.ply') ?? find('.spz');
+        const splatExt = splatFile?.endsWith('.spz') ? '.spz' : '.ply';
+        splatUrl = await blobUrl(splatFile, splatExt) ?? src;
         bonesUrl = await blobUrl(find('bone_tree'));
         weightsUrl = await blobUrl(find('lbs_weight'));
         basisBlobUrl = await blobUrl(find('expression_basis'));

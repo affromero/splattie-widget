@@ -1,5 +1,7 @@
 import { SplatWidget } from './SplatWidget';
 
+export const VERSION: string = __WIDGET_VERSION__;
+
 export { SplatWidget };
 export { StateMachine } from './state/StateMachine';
 export { createDefaultConfig, loadConfig, mergeWithDefaults } from './state/StateConfig';
@@ -8,6 +10,7 @@ export type {
   CameraConfig,
   GhostConfig,
   SplatWidgetEvents,
+  SplattieManifest,
   StateDefinition,
   TrackingConfig,
   TransitionConfig,

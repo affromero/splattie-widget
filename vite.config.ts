@@ -1,7 +1,11 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import pkg from './package.json' with { type: 'json' };
 
 export default defineConfig({
+  define: {
+    __WIDGET_VERSION__: JSON.stringify(pkg.version),
+  },
   server: {
     port: 4002,
   },

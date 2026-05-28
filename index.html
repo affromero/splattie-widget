@@ -111,10 +111,7 @@
     <div class="drop-zone" id="drop-zone"><span>Drop .splattie here</span></div>
     <splattie-widget
       id="widget"
-      src="/andres.ply"
-      bones="/bone_tree.json"
-      weights="/lbs_weight_20k.json"
-      config="/states.json"
+      src="/demo.splattie"
       expression-basis="/expression_basis.bin"
       background="#0e0e14"
     ></splattie-widget>
@@ -537,14 +534,29 @@
     }
 
     async function exportSplattie() {
-      const zip = new JSZip.default();
-      zip.file('andres.ply', await fetch('/andres.ply').then(r => r.blob()));
-      zip.file('bone_tree.json', await fetch('/bone_tree.json').then(r => r.text()));
-      zip.file('lbs_weight_20k.json', await fetch('/lbs_weight_20k.json').then(r => r.text()));
-      zip.file('states.json', JSON.stringify(config, null, 2));
-      const basisRes = await fetch('/expression_basis.bin');
-      if (basisRes.ok) zip.file('expression_basis.bin', await basisRes.blob());
-      const blob = await zip.generateAsync({ type: 'blob' });
+      const src = widget.getAttribute('src');
+      const res = await fetch(src);
+      const originalZip = await JSZip.default.loadAsync(await res.arrayBuffer());
+      const newZip = new JSZip.default();
+
+      const manifestEntry = originalZip.file('manifest.json');
+      if (!manifestEntry) {
+        alert('Cannot export: source .splattie has no manifest.json');
+        return;
+      }
+      const manifest = JSON.parse(await manifestEntry.async('text'));
+      manifest.metadata = manifest.metadata || {};
+      manifest.metadata.lastEditedAt = new Date().toISOString();
+      manifest.metadata.editedBy = 'splattie-editor';
+
+      for (const [name, file] of Object.entries(originalZip.files)) {
+        if (name === 'manifest.json' || name === 'states.json' || file.dir) continue;
+        newZip.file(name, await file.async('blob'));
+      }
+      newZip.file('manifest.json', JSON.stringify(manifest, null, 2));
+      newZip.file('states.json', JSON.stringify(config, null, 2));
+
+      const blob = await newZip.generateAsync({ type: 'blob' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'avatar.splattie';

@@ -51,7 +51,7 @@ file is missing it errors out.
 
   "avatar": {
     "splat": {
-      "file": "andres.ply",               // ZIP entry name
+      "file": "avatar.ply",               // ZIP entry name
       "format": "ply",                    // "ply" | "spz"
       "numGaussians": 20018,
       "topology": "flame-20k"             // free-form topology tag

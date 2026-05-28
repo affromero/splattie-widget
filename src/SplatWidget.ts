@@ -13,7 +13,7 @@ import type { BoneInfo, SparkInstance } from './renderer/SparkSetup';
 import { ExpressionBasisApplier, loadExpressionBasis } from './features/ExpressionBasis';
 import { createDefaultConfig, loadConfig } from './state/StateConfig';
 import { StateMachine } from './state/StateMachine';
-import type { WidgetConfig } from './types';
+import type { SplattieManifest, WidgetConfig } from './types';
 
 export class SplatWidget extends HTMLElement {
   private spark: SparkInstance | null = null;
@@ -66,24 +66,45 @@ export class SplatWidget extends HTMLElement {
         const { default: JSZip } = await import('jszip');
         const res = await fetch(src);
         const zip = await JSZip.loadAsync(await res.arrayBuffer());
-        const files = Object.keys(zip.files);
 
-        const find = (pattern: string) => files.find(f => f.includes(pattern));
-        const blobUrl = async (name: string | undefined, ext?: string) => {
+        const manifestFile = zip.file('manifest.json');
+        if (!manifestFile) {
+          throw new Error(
+            '[splattie] manifest.json is missing from the .splattie bundle. ' +
+            `Required for format v${__WIDGET_VERSION__}. ` +
+            'Regenerate the .splattie with the current widget version.',
+          );
+        }
+
+        const manifest = JSON.parse(await manifestFile.async('text')) as SplattieManifest;
+
+        if (manifest.format !== 'splattie') {
+          throw new Error(`[splattie] not a splattie file: format="${manifest.format}"`);
+        }
+
+        if (manifest.formatVersion !== __WIDGET_VERSION__) {
+          throw new Error(
+            `[splattie] format version mismatch: file=${manifest.formatVersion}, widget=${__WIDGET_VERSION__}. ` +
+            'Rebuild the widget (npm run build -w packages/splattie-widget) and re-bundle the .splattie file.',
+          );
+        }
+
+        const blobUrl = async (name: string | undefined, ext?: string): Promise<string | undefined> => {
           if (!name) return undefined;
-          const blob = await zip.file(name)!.async('blob');
+          const entry = zip.file(name);
+          if (!entry) throw new Error(`[splattie] manifest references "${name}" but it's not in the ZIP`);
+          const blob = await entry.async('blob');
           return URL.createObjectURL(blob) + (ext ? `#${ext}` : '');
         };
 
-        const splatFile = find('.ply') ?? find('.spz');
-        const splatExt = splatFile?.endsWith('.spz') ? '.spz' : '.ply';
-        splatUrl = await blobUrl(splatFile, splatExt) ?? src;
-        bonesUrl = await blobUrl(find('bone_tree'));
-        weightsUrl = await blobUrl(find('lbs_weight'));
-        basisBlobUrl = await blobUrl(find('expression_basis'));
+        const splatExt = manifest.avatar.splat.format === 'spz' ? '.spz' : '.ply';
+        splatUrl = (await blobUrl(manifest.avatar.splat.file, splatExt)) ?? src;
+        bonesUrl = await blobUrl(manifest.animation.skeleton?.file);
+        weightsUrl = await blobUrl(manifest.animation.weights?.file);
+        basisBlobUrl = await blobUrl(manifest.animation.expression?.basis ?? undefined);
 
-        const statesFile = find('states.json');
-        if (statesFile) statesConfig = JSON.parse(await zip.file(statesFile)!.async('text'));
+        const configFile = zip.file(manifest.widget.config);
+        if (configFile) statesConfig = JSON.parse(await configFile.async('text')) as Partial<WidgetConfig>;
       } else {
         bonesUrl = this.getAttribute('bones') ?? undefined;
         weightsUrl = this.getAttribute('weights') ?? undefined;
@@ -114,7 +135,8 @@ export class SplatWidget extends HTMLElement {
 
       if (basisBlobUrl && this.spark.baselinePositions && this.spark.packedArray) {
         const basisData = await loadExpressionBasis(basisBlobUrl);
-        const jawY = this.spark.bones.length > 2 ? this.spark.bones[2].pos[1] : undefined;
+        const jawBone = this.spark.bones.find(b => b.name === 'jaw');
+        const jawY = jawBone?.pos[1];
         this.exprBasis = new ExpressionBasisApplier(basisData, this.spark.baselinePositions, jawY);
       }
 
@@ -145,11 +167,16 @@ export class SplatWidget extends HTMLElement {
   }
 
   private setupBlinkEdits(): void {
-    if (!this.spark || this.spark.bones.length < 5) return;
+    if (!this.spark) return;
+    const byName = new Map(this.spark.bones.map(b => [b.name, b]));
+    const leftEye = byName.get('leftEye');
+    const rightEye = byName.get('rightEye');
+    if (!leftEye || !rightEye) return;
+
     const mesh = this.spark.splatMesh as unknown as THREE.Object3D & { edits: SplatEdit[] | null };
 
-    const leftEyePos = this.spark.bones[3].pos;
-    const rightEyePos = this.spark.bones[4].pos;
+    const leftEyePos = leftEye.pos;
+    const rightEyePos = rightEye.pos;
 
     const leftSdf = new SplatEditSdf({
       type: SplatEditSdfType.SPHERE,
@@ -258,44 +285,50 @@ export class SplatWidget extends HTMLElement {
       updateBones: () => void;
     };
 
+    const byName = new Map(bones.map(b => [b.name, b]));
+    const neck = byName.get('neck');
+    const jaw = byName.get('jaw');
+    const leftEye = byName.get('leftEye');
+    const rightEye = byName.get('rightEye');
+
     const tracking = frame.tracking;
 
-    // Neck (bone 1) - computed first so children inherit its rotation
+    // Neck - computed first so children inherit its rotation
     const exprNeckPitch = frame.expression.neckTilt ?? 0;
     const exprNeckYaw = frame.expression.neckYaw ?? 0;
     const exprNeckRoll = frame.expression.neckRoll ?? 0;
     const neckYaw = this.cursor.ndcX * 0.08 * tracking.head + exprNeckYaw;
     const neckPitch = this.cursor.ndcY * 0.05 * tracking.head + exprNeckPitch;
     const neckQ = new THREE.Quaternion();
-    if (bones.length > 1) {
+    if (neck) {
       neckQ.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), exprNeckRoll));
       neckQ.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), neckYaw));
       neckQ.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -neckPitch));
-      sk.setBoneQuatPos(1, neckQ, new THREE.Vector3(...bones[1].pos));
+      sk.setBoneQuatPos(neck.idx, neckQ, new THREE.Vector3(...neck.pos));
     }
 
-    // Eyes (bones 3, 4) - cursor tracking + gaze offset, inherits neck rotation
+    // Eyes - cursor tracking + gaze offset, inherits neck rotation
     const gazeX = frame.expression.gazeX ?? 0;
     const gazeY = frame.expression.gazeY ?? 0;
     const clampedX = Math.max(-1, Math.min(1, this.cursor.ndcX));
     const clampedY = Math.max(-1, Math.min(1, this.cursor.ndcY));
     const eyeYaw = clampedX * 0.09 * tracking.eyes + gazeX;
     const eyePitch = clampedY * 0.04 * tracking.eyes + gazeY;
-    for (const eyeIdx of [3, 4]) {
-      if (eyeIdx >= bones.length) continue;
+    for (const eye of [leftEye, rightEye]) {
+      if (!eye) continue;
       const localQ = new THREE.Quaternion();
       localQ.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), eyeYaw));
       localQ.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -eyePitch));
       const q = neckQ.clone().multiply(localQ);
-      sk.setBoneQuatPos(eyeIdx, q, new THREE.Vector3(...bones[eyeIdx].pos));
+      sk.setBoneQuatPos(eye.idx, q, new THREE.Vector3(...eye.pos));
     }
 
-    // Jaw (bone 2) - expression jawOpen only, inherits neck rotation
-    if (bones.length > 2) {
+    // Jaw - expression jawOpen only, inherits neck rotation
+    if (jaw) {
       const jawAngle = frame.expression.jawOpen ?? 0;
       const localJaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), jawAngle);
       const jq = neckQ.clone().multiply(localJaw);
-      sk.setBoneQuatPos(2, jq, new THREE.Vector3(...bones[2].pos));
+      sk.setBoneQuatPos(jaw.idx, jq, new THREE.Vector3(...jaw.pos));
     }
 
     // Virtual bones - translate from rest position to simulate expressions

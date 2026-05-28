@@ -1,5 +1,4 @@
 {
-  "version": 1,
   "defaults": {
     "camera": { "theta": 0, "phi": 75, "radius": 0.5, "fov": 60 },
     "autoBlink": { "interval": [2000, 7000], "duration": 150 }

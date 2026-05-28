@@ -38,13 +38,46 @@ export interface AutoBlinkConfig {
 }
 
 export interface WidgetConfig {
-  version: number;
   defaults: {
     camera: CameraConfig;
     autoBlink?: AutoBlinkConfig;
   };
   states: Record<string, StateDefinition>;
   transitions: Record<string, TransitionConfig>;
+}
+
+export interface SplattieManifest {
+  format: 'splattie';
+  formatVersion: string;
+  generator: {
+    method: string;
+    methodVersion?: string;
+    tool: string;
+    createdAt: string;
+  };
+  avatar: {
+    splat: {
+      file: string;
+      format: 'ply' | 'spz';
+      numGaussians: number;
+      topology: string;
+    };
+  };
+  animation: {
+    type: 'lbs' | 'blendshape' | 'neural';
+    skeleton?: { file: string; rig: string };
+    weights?: { file: string };
+    expression?: { system: string; basis: string | null };
+  };
+  widget: { config: string };
+  metadata?: {
+    sourceImageHash?: string;
+    license?: string;
+    attribution?: string;
+    author?: string;
+    lastEditedAt?: string;
+    editedBy?: string;
+  };
 }
 
 export interface SplatWidgetEvents {

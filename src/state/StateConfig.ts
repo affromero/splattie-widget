@@ -12,7 +12,6 @@ const DEFAULT_STATE: StateDefinition = {
 
 export function createDefaultConfig(): WidgetConfig {
   return {
-    version: 1,
     defaults: {
       camera: DEFAULT_CAMERA,
       autoBlink: { interval: [2000, 7000], duration: 150 },
@@ -48,7 +47,6 @@ export function createDefaultConfig(): WidgetConfig {
 export function mergeWithDefaults(partial: Partial<WidgetConfig>): WidgetConfig {
   const defaults = createDefaultConfig();
   return {
-    version: partial.version ?? defaults.version,
     defaults: { ...defaults.defaults, ...partial.defaults },
     states: { ...defaults.states, ...partial.states },
     transitions: { ...defaults.transitions, ...partial.transitions },

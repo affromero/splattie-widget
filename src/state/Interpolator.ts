@@ -62,7 +62,8 @@ export function lerpTracking(a: TrackingConfig, b: TrackingConfig, t: number): T
   return {
     eyes: lerpNumber(a.eyes, b.eyes, t),
     head: lerpNumber(a.head, b.head, t),
-    body: lerpNumber(a.body ?? 0, b.body ?? 0, t),
+    armReach: lerpNumber(a.armReach ?? 0, b.armReach ?? 0, t),
+    shoulderFollow: lerpNumber(a.shoulderFollow ?? 0, b.shoulderFollow ?? 0, t),
   };
 }
 

@@ -11,7 +11,7 @@ import { HitDetector } from './interaction/HitDetector';
 import { createSparkInstance } from './renderer/SparkSetup';
 import type { BoneInfo, SparkInstance } from './renderer/SparkSetup';
 import { ExpressionBasisApplier, loadExpressionBasis } from './features/ExpressionBasis';
-import { createDefaultConfig, loadConfig } from './state/StateConfig';
+import { createDefaultConfig, loadConfig, type AssetType } from './state/StateConfig';
 import { StateMachine } from './state/StateMachine';
 import type { SplattieManifest, WidgetConfig } from './types';
 
@@ -33,6 +33,12 @@ export class SplatWidget extends HTMLElement {
   private clickHoldTimer = 0;
   private blinkEdit: { left: SplatEditSdf; right: SplatEditSdf; edit: SplatEdit } | null = null;
   private exprBasis: ExpressionBasisApplier | null = null;
+  private _assetType: AssetType = 'head';
+
+  /** Asset type of the loaded bundle ('head' until a manifest says otherwise). */
+  get assetType(): AssetType {
+    return this._assetType;
+  }
 
   static get observedAttributes(): string[] {
     return ['src', 'background', 'width', 'height'];
@@ -82,6 +88,8 @@ export class SplatWidget extends HTMLElement {
           throw new Error(`[splattie] not a splattie file: format="${manifest.format}"`);
         }
 
+        this._assetType = manifest.assetType ?? 'head';
+
         if (manifest.formatVersion !== __WIDGET_VERSION__) {
           throw new Error(
             `[splattie] format version mismatch: file=${manifest.formatVersion}, widget=${__WIDGET_VERSION__}. ` +
@@ -113,11 +121,16 @@ export class SplatWidget extends HTMLElement {
         if (configUrl) statesConfig = await fetch(configUrl).then(r => r.json());
       }
 
-      if (!basisBlobUrl) basisBlobUrl = this.getAttribute('expression-basis') ?? undefined;
+      // FLAME per-splat expression basis is head-only. Gate the attribute fallback
+      // on assetType so a body bundle (manifest basis: null) never picks up a
+      // hardcoded `expression-basis` attribute (e.g. editor.html sets one for all).
+      if (!basisBlobUrl && this._assetType === 'head') {
+        basisBlobUrl = this.getAttribute('expression-basis') ?? undefined;
+      }
 
       this.config = statesConfig
-        ? (await import('./state/StateConfig')).mergeWithDefaults(statesConfig)
-        : createDefaultConfig();
+        ? (await import('./state/StateConfig')).mergeWithDefaults(statesConfig, this._assetType)
+        : createDefaultConfig(this._assetType);
       this._stateMachine = new StateMachine(this.config);
       if (this.config.defaults.autoBlink) {
         this.autoBlink = new AutoBlink(this.config.defaults.autoBlink);
@@ -227,7 +240,11 @@ export class SplatWidget extends HTMLElement {
 
       // Dimension 2 + 5: Expressions + cursor tracking via SplatSkinning
       if (this.spark.skinning && this.spark.bones.length > 0) {
-        this.applySkinning(this.spark.skinning, this.spark.bones, frame);
+        if (this._assetType === 'body') {
+          this.applyBodySkinning(this.spark.skinning, this.spark.bones, frame);
+        } else {
+          this.applyHeadSkinning(this.spark.skinning, this.spark.bones, frame);
+        }
       }
 
       // Expression basis - per-splat position offsets from FLAME blendshapes
@@ -279,7 +296,14 @@ export class SplatWidget extends HTMLElement {
     });
   }
 
-  private applySkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {
+  // Body skinning (SMPL-X: head/eye gaze + shoulder follow + CCD IK arm) lands in
+  // Phase 1.D. Until then a body bundle loads up to here and errors loudly rather
+  // than silently rendering an un-animated body.
+  private applyBodySkinning(_skinning: unknown, _bones: BoneInfo[], _frame: typeof StateMachine.prototype.currentFrame): void {
+    throw new Error('[splattie] body skinning not implemented until Phase 1.D — load a head bundle, or ship 1.D first.');
+  }
+
+  private applyHeadSkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {
     const sk = skinning as {
       setBoneQuatPos: (idx: number, q: THREE.Quaternion, p: THREE.Vector3) => void;
       updateBones: () => void;

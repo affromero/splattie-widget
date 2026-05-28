@@ -10,7 +10,14 @@ const DEFAULT_STATE: StateDefinition = {
   tracking: { eyes: 1.0, head: 0.0 },
 };
 
-export function createDefaultConfig(): WidgetConfig {
+export type AssetType = 'head' | 'body' | 'object';
+
+export function createDefaultConfig(assetType: AssetType = 'head'): WidgetConfig {
+  // Phase 1.A: body/object reuse the head defaults; body-specific tracking values
+  // (armReach, shoulderFollow, subtler head) are tuned in Phase 1.E. The parameter
+  // exists now so body bundles resolve their own defaults and never inherit head
+  // states by accident (see mergeWithDefaults).
+  void assetType;
   return {
     defaults: {
       camera: DEFAULT_CAMERA,
@@ -44,8 +51,8 @@ export function createDefaultConfig(): WidgetConfig {
   };
 }
 
-export function mergeWithDefaults(partial: Partial<WidgetConfig>): WidgetConfig {
-  const defaults = createDefaultConfig();
+export function mergeWithDefaults(partial: Partial<WidgetConfig>, assetType: AssetType = 'head'): WidgetConfig {
+  const defaults = createDefaultConfig(assetType);
   return {
     defaults: { ...defaults.defaults, ...partial.defaults },
     states: { ...defaults.states, ...partial.states },

@@ -8,7 +8,10 @@ export interface GhostConfig {
 export interface TrackingConfig {
   eyes: number;
   head: number;
-  body?: number;
+  /** Body-only: how far the nearer arm reaches toward the cursor via IK. */
+  armReach?: number;
+  /** Body-only: how much the shoulders rotate to follow head yaw. */
+  shoulderFollow?: number;
 }
 
 export interface CameraConfig {
@@ -49,6 +52,7 @@ export interface WidgetConfig {
 export interface SplattieManifest {
   format: 'splattie';
   formatVersion: string;
+  assetType: 'head' | 'body' | 'object';
   generator: {
     method: string;
     methodVersion?: string;

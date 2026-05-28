@@ -14,7 +14,7 @@
 [![Tests](https://img.shields.io/badge/tests-25_passing-brightgreen)]()
 [![Bundle](https://img.shields.io/badge/format-.splattie-orange)]()
 
-[Quick Start](#quick-start) · [Format Spec](#the-splattie-format) · [API](#api) · [Editor](#visual-editor) · [How It Works](#how-it-works)
+[Quick Start](#quick-start) · [Format Spec](FORMAT.md) · [API](#api) · [Editor](#visual-editor) · [How It Works](#how-it-works)
 
 </div>
 
@@ -49,10 +49,13 @@ import '@afromero/splattie-widget';
 
 > **v0.x experimental.** Core files (PLY, FLAME bones) follow established standards. Expression basis and states may evolve.
 
-A ZIP bundle. Only the splat data is required - everything else adds features incrementally.
+A ZIP bundle with a required `manifest.json` that declares every asset
+and locks the file's `formatVersion` to the widget version. See
+[`FORMAT.md`](FORMAT.md) for the full spec.
 
 ```
 avatar.splattie
+├── manifest.json             # (required) declares every asset + formatVersion
 ├── *.ply or *.spz            # (required) Gaussian splats
 ├── bone_tree.json            # (optional) Skeleton for skinning
 ├── lbs_weight_20k.json       # (optional) Per-splat bone weights
@@ -129,7 +132,6 @@ Each state (idle, hover, click) sets all 5 dimensions simultaneously.
 
 ```json
 {
-  "version": 1,
   "defaults": {
     "camera": { "theta": 0, "phi": 75, "radius": 0.5, "fov": 60 },
     "autoBlink": { "interval": [2000, 7000], "duration": 150 }

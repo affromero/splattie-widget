@@ -31,6 +31,7 @@ export class SplatWidget extends HTMLElement {
   private config: WidgetConfig | null = null;
   private frameCount = 0;
   private clickHoldTimer = 0;
+  private lastFrameMs = 0;
   private blinkEdit: { left: SplatEditSdf; right: SplatEditSdf; edit: SplatEdit } | null = null;
   private exprBasis: ExpressionBasisApplier | null = null;
 
@@ -203,12 +204,14 @@ export class SplatWidget extends HTMLElement {
   private startRenderLoop(): void {
     const { renderer, scene, camera } = this.spark!;
 
-    renderer.setAnimationLoop(() => {
+    renderer.setAnimationLoop((timeMs: number) => {
       this.frameCount++;
       if (!this.stateMachine || !this.spark) return;
 
-      const deltaTime = 1 / 60;
-      const now = performance.now() / 1000;
+      const now = timeMs / 1000;
+      let deltaTime = this.lastFrameMs ? (timeMs - this.lastFrameMs) / 1000 : 1 / 60;
+      deltaTime = Math.min(deltaTime, 0.1); // clamp big gaps (e.g. after tab-away)
+      this.lastFrameMs = timeMs;
       this.stateMachine.update(deltaTime);
       const frame = this.stateMachine.currentFrame;
 

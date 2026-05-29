@@ -4,19 +4,7 @@
  * directly to Spark's PackedSplats buffer (half-float encoding).
  */
 
-const _f32 = new Float32Array(1);
-const _i32 = new Int32Array(_f32.buffer);
-
-function toHalf(f: number): number {
-  _f32[0] = f;
-  const i = _i32[0];
-  const s = (i >>> 16) & 0x8000;
-  const e = ((i >>> 23) & 0xff) - 112;
-  const m = i & 0x7fffff;
-  if (e <= 0) return s;
-  if (e > 30) return s | 0x7c00;
-  return s | (e << 10) | (m >>> 13);
-}
+import { toHalf } from './half';
 
 export interface ExprBasisData {
   numVertices: number;

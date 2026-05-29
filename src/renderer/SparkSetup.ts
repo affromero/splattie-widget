@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { halfToFloat } from '../features/half';
 
 export interface BoneInfo {
   name: string;
@@ -50,6 +51,26 @@ async function parseSplatPositions(url: string): Promise<Float32Array> {
     return parsePlyPositions(url).catch(() => new Float32Array(0));
   }
   return parsePlyPositions(url);
+}
+
+/**
+ * Decode splat centers from Spark's PackedSplats buffer. Positions are stored as
+ * half-floats: word i*4+1 holds halfX | halfY<<16, word i*4+2 holds halfZ in its
+ * low 16 bits (matching ExpressionBasisApplier's writes). Used to recover baseline
+ * positions when the source is SPZ (which the PLY text parser can't read).
+ */
+function decodePackedPositions(packed: Uint32Array): Float32Array {
+  const numSplats = Math.floor(packed.length / 4);
+  const positions = new Float32Array(numSplats * 3);
+  for (let i = 0; i < numSplats; i++) {
+    const i4 = i * 4;
+    const w1 = packed[i4 + 1];
+    const w2 = packed[i4 + 2];
+    positions[i * 3] = halfToFloat(w1 & 0xffff);
+    positions[i * 3 + 1] = halfToFloat((w1 >>> 16) & 0xffff);
+    positions[i * 3 + 2] = halfToFloat(w2 & 0xffff);
+  }
+  return positions;
 }
 
 async function parsePlyPositions(url: string): Promise<Float32Array> {
@@ -153,16 +174,33 @@ export async function createSparkInstance(
     scene.add(mesh);
   });
 
+  // Expose the packed splat buffer (positions are half-float encoded here). Read
+  // before skinning so it can supply baseline positions when the source is SPZ.
+  let packedArray: Uint32Array | null = null;
+  let packedSplatsRef: { needsUpdate: boolean } | null = null;
+  const meshAny = splatMesh as unknown as Record<string, unknown>;
+  const ps = meshAny.packedSplats as { packedArray?: Uint32Array; needsUpdate?: boolean } | undefined;
+  if (ps?.packedArray) {
+    packedArray = ps.packedArray;
+    packedSplatsRef = ps as { needsUpdate: boolean };
+  }
+
   let skinning: InstanceType<typeof SplatSkinning> | null = null;
   const bones: BoneInfo[] = [];
   let baselinePositions: Float32Array | null = null;
 
   if (boneTreeUrl && lbsWeightsUrl) {
-    const [boneTree, lbsWeights, splatPositions] = await Promise.all([
+    const [boneTree, lbsWeights, parsedPositions] = await Promise.all([
       fetch(boneTreeUrl).then((r) => r.json()),
       fetch(lbsWeightsUrl).then((r) => r.json()),
       parseSplatPositions(splatUrl),
     ]) as [{ bones: Array<{ name: string; position: number[]; children?: unknown[] }> }, number[][], Float32Array];
+
+    // PLY parses to full-precision positions; SPZ (or any parse failure) yields an
+    // empty array, so fall back to decoding centers from the packed half-float buffer.
+    const splatPositions = parsedPositions.length > 0
+      ? parsedPositions
+      : (packedArray ? decodePackedPositions(packedArray) : parsedPositions);
 
     function flattenBones(
       node: { name: string; position: number[]; children?: unknown[] },
@@ -244,17 +282,6 @@ export async function createSparkInstance(
     (splatMesh as unknown as { skinning: unknown }).skinning = skinning;
     skinning.updateBones();
     baselinePositions = splatPositions;
-  }
-
-  // Expose packed splat buffer for expression basis per-splat position updates
-  let packedArray: Uint32Array | null = null;
-  let packedSplatsRef: { needsUpdate: boolean } | null = null;
-
-  const meshAny = splatMesh as unknown as Record<string, unknown>;
-  const ps = meshAny.packedSplats as { packedArray?: Uint32Array; needsUpdate?: boolean } | undefined;
-  if (ps?.packedArray) {
-    packedArray = ps.packedArray;
-    packedSplatsRef = ps as { needsUpdate: boolean };
   }
 
   return { renderer, scene, camera, splatMesh, skinning, bones, canvas, baselinePositions, packedArray, packedSplatsRef };

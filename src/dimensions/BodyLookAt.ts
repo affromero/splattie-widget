@@ -18,14 +18,14 @@ function yawPitch(yaw: number, pitch: number): THREE.Quaternion {
  * sides — applied as a local rotation about the forward (Z) axis at each shoulder.
  */
 export const REST_POSE: ReadonlyMap<string, THREE.Quaternion> = new Map([
-  // Rotate the (baked T-pose) arms down to the sides. ~0.95 rad rests the hands at
-  // hip level; rotating further (toward straight down) over-stretches the photo-mesh
-  // arms into thin tendrils reaching the feet.
-  ['L_Shoulder', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -0.95)],
-  ['R_Shoulder', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, 0.95)],
-  // A little elbow bend so the forearms relax inward, not ramrod straight.
-  ['L_Elbow', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -0.3)],
-  ['R_Elbow', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, 0.3)],
+  // Rotate the (baked T-pose) arms down to the sides (~1.25 rad). The photo-mesh arms
+  // stretch under this rotation, so bodies are framed head-to-hips by default, which
+  // crops the stretched lower-arms; zoom out (editor radius) to pose, accepting the
+  // softness on extended limbs.
+  ['L_Shoulder', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -1.25)],
+  ['R_Shoulder', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, 1.25)],
+  ['L_Elbow', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -0.15)],
+  ['R_Elbow', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, 0.15)],
 ]);
 
 export interface PosedBone {

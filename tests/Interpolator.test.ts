@@ -6,11 +6,30 @@ import {
   lerpExpression,
   lerpGhost,
   lerpNumber,
+  lerpPose,
   lerpRotation,
   lerpState,
   lerpTracking,
 } from '../src/state/Interpolator';
 import type { StateDefinition } from '../src/types';
+
+describe('lerpPose', () => {
+  it('slerps per-joint quaternions and unions joints from both sides', () => {
+    const a = { L_Shoulder: [0, 0, 0, 1] as [number, number, number, number] };
+    const b = { L_Shoulder: [0, 0, 1, 0] as [number, number, number, number], R_Elbow: [0, 0, 0, 1] as [number, number, number, number] };
+    const mid = lerpPose(a, b, 0.5);
+    expect(Object.keys(mid).sort()).toEqual(['L_Shoulder', 'R_Elbow']);
+    // Halfway from identity to a 180° z-rotation is a 90° z-rotation: (0,0,√½,√½).
+    expect(mid.L_Shoulder[2]).toBeCloseTo(Math.SQRT1_2, 4);
+    expect(mid.L_Shoulder[3]).toBeCloseTo(Math.SQRT1_2, 4);
+  });
+
+  it('treats undefined/missing as identity (rest) and tolerates undefined inputs', () => {
+    expect(lerpPose(undefined, undefined, 0.5)).toEqual({});
+    const out = lerpPose(undefined, { L_Wrist: [0, 0, 1, 0] }, 0); // t=0 → identity
+    expect(out.L_Wrist[3]).toBeCloseTo(1, 4);
+  });
+});
 
 describe('lerpNumber', () => {
   it('interpolates between two numbers', () => {

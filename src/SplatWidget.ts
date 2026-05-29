@@ -309,6 +309,13 @@ export class SplatWidget extends HTMLElement {
     };
     const tracking = frame.tracking;
     const localRots = new Map<string, THREE.Quaternion>(REST_POSE);
+    // Per-state authored pose (IK-solved limb rotations) replaces the resting pose
+    // for those joints; the look-at then drives the spine/neck/head on top.
+    const pose = frame.pose ?? {};
+    for (const joint of Object.keys(pose)) {
+      const q = pose[joint];
+      localRots.set(joint, new THREE.Quaternion(q[0], q[1], q[2], q[3]));
+    }
     const look = this.bodyLookAt.localRotations(this.cursor.ndcX, this.cursor.ndcY, tracking.head ?? 0, tracking.torso ?? 0);
     for (const [joint, quat] of look) localRots.set(joint, quat);
 

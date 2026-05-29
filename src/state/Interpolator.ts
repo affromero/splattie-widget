@@ -1,4 +1,8 @@
+import * as THREE from 'three';
 import type { CameraConfig, GhostConfig, StateDefinition, TrackingConfig, TransitionConfig } from '../types';
+
+type Quat = [number, number, number, number];
+const IDENTITY_QUAT: Quat = [0, 0, 0, 1];
 
 type EasingFn = (t: number) => number;
 
@@ -58,6 +62,24 @@ export function lerpRotation(
   return [lerpNumber(a[0], b[0], t), lerpNumber(a[1], b[1], t), lerpNumber(a[2], b[2], t)];
 }
 
+export function lerpPose(
+  a: Record<string, Quat> | undefined,
+  b: Record<string, Quat> | undefined,
+  t: number,
+): Record<string, Quat> {
+  const aa = a ?? {};
+  const bb = b ?? {};
+  const keys = new Set([...Object.keys(aa), ...Object.keys(bb)]);
+  const result: Record<string, Quat> = {};
+  for (const k of keys) {
+    // A joint present on only one side slerps from/to identity (rest).
+    const q = new THREE.Quaternion(...(aa[k] ?? IDENTITY_QUAT));
+    q.slerp(new THREE.Quaternion(...(bb[k] ?? IDENTITY_QUAT)), t);
+    result[k] = [q.x, q.y, q.z, q.w];
+  }
+  return result;
+}
+
 export function lerpTracking(a: TrackingConfig, b: TrackingConfig, t: number): TrackingConfig {
   return {
     eyes: lerpNumber(a.eyes ?? 0, b.eyes ?? 0, t),
@@ -77,6 +99,7 @@ export function lerpState(
     camera: lerpCamera(from.camera, to.camera, t),
     rotation: lerpRotation(from.rotation, to.rotation, t),
     tracking: lerpTracking(from.tracking, to.tracking, t),
+    pose: lerpPose(from.pose, to.pose, t),
   };
 }
 

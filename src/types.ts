@@ -28,6 +28,9 @@ export interface StateDefinition {
   camera: CameraConfig;
   rotation: [number, number, number];
   tracking: TrackingConfig;
+  /** Body-only: per-joint LOCAL rotation overrides (quaternion xyzw), authored via
+   * IK in the editor and composed on top of the resting pose by the widget's FK. */
+  pose?: Record<string, [number, number, number, number]>;
 }
 
 export interface TransitionConfig {

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SplatEdit, SplatEditSdf, SplatEditSdfType } from '@sparkjsdev/spark';
-import { BodyLookAt } from './dimensions/BodyLookAt';
+import { BodyLookAt, REST_POSE, forwardKinematics } from './dimensions/BodyLookAt';
 import { CameraSphere } from './dimensions/CameraSphere';
 import { CursorTracking } from './dimensions/CursorTracking';
 import { GhostEffect } from './dimensions/GhostEffect';
@@ -298,34 +298,26 @@ export class SplatWidget extends HTMLElement {
     });
   }
 
-  // Body skinning (SMPL-X): head + torso look-at toward the cursor. Rotates the
-  // spine→neck→head chain (FK-composed) via Spark's SplatSkinning; the rest of the
-  // 55 joints stay at their rest pose (set once at init). Pose-driven states (the
-  // editor's "machine states") layer on frame.expression in a later pass.
+  // Body skinning (SMPL-X) via forward kinematics: a resting pose (arms down from
+  // LHM's baked T-pose) plus head + torso look-at toward the cursor, composed as
+  // local joint rotations. FK turns those into per-bone world transforms, so the
+  // head turns as a whole (jaw/eyes inherit it) and the arms rotate rigidly.
   private applyBodySkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {
     const sk = skinning as {
       setBoneQuatPos: (idx: number, q: THREE.Quaternion, p: THREE.Vector3) => void;
       updateBones: () => void;
     };
     const tracking = frame.tracking;
-    const pose = this.bodyLookAt.compute(this.cursor.ndcX, this.cursor.ndcY, tracking.head ?? 0, tracking.torso ?? 0);
+    const localRots = new Map<string, THREE.Quaternion>(REST_POSE);
+    const look = this.bodyLookAt.localRotations(this.cursor.ndcX, this.cursor.ndcY, tracking.head ?? 0, tracking.torso ?? 0);
+    for (const [joint, quat] of look) localRots.set(joint, quat);
 
-    const lookAt = new Map<string, THREE.Quaternion>([
-      ['Spine_3', pose.spine3],
-      ['Neck', pose.neck],
-      ['Head', pose.head],
-      // Jaw + eyes are children of Head in the SMPL-X tree; without inheriting its
-      // world rotation they'd stay static while the skull turns (the face tears).
-      ['Jaw', pose.head],
-      ['L_Eye', pose.head],
-      ['R_Eye', pose.head],
-    ]);
-    const identity = new THREE.Quaternion();
-    // Spark needs EVERY bone's current transform set each frame; the look-at joints
-    // get their world rotation, the rest stay at identity (their rest pose). Leaving
-    // the other joints unset blanks the whole render the moment any joint rotates.
+    // Spark needs every bone's current transform each frame (unset joints blank the
+    // render once any joint moves); FK provides all 55.
+    const world = forwardKinematics(bones, localRots);
     for (const bone of bones) {
-      sk.setBoneQuatPos(bone.idx, lookAt.get(bone.name) ?? identity, new THREE.Vector3(...bone.pos));
+      const posed = world.get(bone.idx);
+      if (posed) sk.setBoneQuatPos(bone.idx, posed.quat, posed.pos);
     }
     sk.updateBones();
   }

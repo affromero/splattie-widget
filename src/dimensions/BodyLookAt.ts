@@ -1,36 +1,78 @@
 import * as THREE from 'three';
+import type { BoneInfo } from '../renderer/SparkSetup';
 
-export interface BodyLookAtPose {
-  /** World-space rotation for the Spine_3 (torso) joint. */
-  spine3: THREE.Quaternion;
-  /** World-space rotation for the Neck joint (inherits torso). */
-  neck: THREE.Quaternion;
-  /** World-space rotation for the Head joint (inherits neck). */
-  head: THREE.Quaternion;
+const AXIS_Y = new THREE.Vector3(0, 1, 0);
+const AXIS_X = new THREE.Vector3(1, 0, 0);
+const AXIS_Z = new THREE.Vector3(0, 0, 1);
+
+/** Local rotation that yaws about +Y then pitches about +X (look toward cursor). */
+function yawPitch(yaw: number, pitch: number): THREE.Quaternion {
+  return new THREE.Quaternion()
+    .setFromAxisAngle(AXIS_Y, yaw)
+    .multiply(new THREE.Quaternion().setFromAxisAngle(AXIS_X, -pitch));
 }
 
-/** Head + torso look-at toward the cursor — the body analog of the head's
- * eyes-follow-cursor. Distributes a gaze rotation down the spine chain: the torso
- * (Spine_3) leans subtly, the neck and head turn progressively more so the figure
- * faces the cursor. Returns WORLD-space (FK-composed) quaternions ready for Spark's
- * `setBoneQuatPos`. Rotations stay small, so each joint pivots about its rest
- * position (the A-pose the bundle bakes is rest for this upper chain). */
+/**
+ * Resting pose as LOCAL joint rotations. LHM bakes the body in the SMPL-X zero pose
+ * (arms straight out, a T). FK rotates the shoulders down so the arms relax at the
+ * sides — applied as a local rotation about the forward (Z) axis at each shoulder.
+ */
+export const REST_POSE: ReadonlyMap<string, THREE.Quaternion> = new Map([
+  ['L_Shoulder', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -1.25)],
+  ['R_Shoulder', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, 1.25)],
+  // A touch of elbow bend so the arms aren't ramrod straight.
+  ['L_Elbow', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -0.15)],
+  ['R_Elbow', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, 0.15)],
+]);
+
+export interface PosedBone {
+  quat: THREE.Quaternion;
+  pos: THREE.Vector3;
+}
+
+/**
+ * SMPL-X forward kinematics: compose per-joint LOCAL rotations down the tree into
+ * WORLD (rotation, position) per bone, ready for Spark's `setBoneQuatPos`. Bones
+ * arrive in skeleton order (parent index < child index), so a single pass suffices.
+ * A joint's local rotation rotates its descendants about it — exactly what LBS needs.
+ */
+export function forwardKinematics(
+  bones: BoneInfo[],
+  localRots: ReadonlyMap<string, THREE.Quaternion>,
+): Map<number, PosedBone> {
+  const world = new Map<number, PosedBone>();
+  const identity = new THREE.Quaternion();
+  for (const bone of bones) {
+    const local = localRots.get(bone.name) ?? identity;
+    if (bone.parentIdx < 0) {
+      world.set(bone.idx, { quat: local.clone(), pos: new THREE.Vector3(...bone.pos) });
+      continue;
+    }
+    const parent = world.get(bone.parentIdx);
+    if (!parent) continue; // out-of-order parent (shouldn't happen for SMPL-X)
+    const parentBone = bones[bone.parentIdx];
+    const offset = new THREE.Vector3(...bone.pos).sub(new THREE.Vector3(...parentBone.pos)).applyQuaternion(parent.quat);
+    world.set(bone.idx, {
+      quat: parent.quat.clone().multiply(local),
+      pos: parent.pos.clone().add(offset),
+    });
+  }
+  return world;
+}
+
+/**
+ * Head + torso look-at toward the cursor, as LOCAL joint rotations (FK composes
+ * them, so the head turns as a whole and the jaw/eyes inherit it automatically).
+ * The turn is split across neck + head for a natural arc; the torso leans subtly.
+ */
 export class BodyLookAt {
-  compute(ndcX: number, ndcY: number, headTrack: number, torsoTrack: number): BodyLookAtPose {
+  localRotations(ndcX: number, ndcY: number, headTrack: number, torsoTrack: number): Map<string, THREE.Quaternion> {
     const cx = Math.max(-1, Math.min(1, ndcX));
     const cy = Math.max(-1, Math.min(1, ndcY));
-
-    const spine3 = yawPitch(cx * 0.12 * torsoTrack, cy * 0.06 * torsoTrack);
-    const neck = spine3.clone().multiply(yawPitch(cx * 0.18 * headTrack, cy * 0.1 * headTrack));
-    const head = neck.clone().multiply(yawPitch(cx * 0.27 * headTrack, cy * 0.15 * headTrack));
-    return { spine3, neck, head };
+    return new Map<string, THREE.Quaternion>([
+      ['Spine_3', yawPitch(cx * 0.1 * torsoTrack, cy * 0.05 * torsoTrack)],
+      ['Neck', yawPitch(cx * 0.22 * headTrack, cy * 0.12 * headTrack)],
+      ['Head', yawPitch(cx * 0.22 * headTrack, cy * 0.12 * headTrack)],
+    ]);
   }
-}
-
-/** Quaternion that yaws about +Y then pitches about +X (look toward the cursor). */
-function yawPitch(yaw: number, pitch: number): THREE.Quaternion {
-  const q = new THREE.Quaternion();
-  q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
-  q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -pitch));
-  return q;
 }

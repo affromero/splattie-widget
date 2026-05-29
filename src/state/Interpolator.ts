@@ -32,7 +32,7 @@ export function lerpExpression(
   b: Record<string, number>,
   t: number,
 ): Record<string, number> {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const keys = new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})]);
   const result: Record<string, number> = {};
   for (const k of keys) {
     result[k] = lerpNumber(a[k] ?? 0, b[k] ?? 0, t);

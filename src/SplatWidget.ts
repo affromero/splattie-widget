@@ -307,17 +307,21 @@ export class SplatWidget extends HTMLElement {
       setBoneQuatPos: (idx: number, q: THREE.Quaternion, p: THREE.Vector3) => void;
       updateBones: () => void;
     };
-    const byName = new Map(bones.map((b) => [b.name, b]));
     const tracking = frame.tracking;
     const pose = this.bodyLookAt.compute(this.cursor.ndcX, this.cursor.ndcY, tracking.head ?? 0, tracking.torso ?? 0);
 
-    const set = (name: string, q: THREE.Quaternion): void => {
-      const bone = byName.get(name);
-      if (bone) sk.setBoneQuatPos(bone.idx, q, new THREE.Vector3(...bone.pos));
-    };
-    set('Spine_3', pose.spine3);
-    set('Neck', pose.neck);
-    set('Head', pose.head);
+    const lookAt = new Map<string, THREE.Quaternion>([
+      ['Spine_3', pose.spine3],
+      ['Neck', pose.neck],
+      ['Head', pose.head],
+    ]);
+    const identity = new THREE.Quaternion();
+    // Spark needs EVERY bone's current transform set each frame; the look-at joints
+    // get their world rotation, the rest stay at identity (their rest pose). Leaving
+    // the other joints unset blanks the whole render the moment any joint rotates.
+    for (const bone of bones) {
+      sk.setBoneQuatPos(bone.idx, lookAt.get(bone.name) ?? identity, new THREE.Vector3(...bone.pos));
+    }
     sk.updateBones();
   }
 

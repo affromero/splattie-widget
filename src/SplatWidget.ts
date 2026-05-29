@@ -314,6 +314,11 @@ export class SplatWidget extends HTMLElement {
       ['Spine_3', pose.spine3],
       ['Neck', pose.neck],
       ['Head', pose.head],
+      // Jaw + eyes are children of Head in the SMPL-X tree; without inheriting its
+      // world rotation they'd stay static while the skull turns (the face tears).
+      ['Jaw', pose.head],
+      ['L_Eye', pose.head],
+      ['R_Eye', pose.head],
     ]);
     const identity = new THREE.Quaternion();
     // Spark needs EVERY bone's current transform set each frame; the look-at joints

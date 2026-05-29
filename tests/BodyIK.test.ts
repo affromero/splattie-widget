@@ -61,6 +61,25 @@ describe('solveTwoBoneIK', () => {
     expect(newC.distanceTo(newB)).toBeCloseTo(c.distanceTo(b), 5); // lower length
   });
 
+  it('reaches the target when the limb already has a non-identity rotation (authoring case)', () => {
+    // Limb posed by Q (like REST_POSE rotating the shoulder), parent identity.
+    const upperBind = new THREE.Vector3(1, 0, 0);
+    const lowerBind = new THREE.Vector3(0, -1, 0);
+    const Q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.9);
+    const root = new THREE.Vector3(0, 0, 0);
+    const rootGlobal = Q.clone();
+    const midGlobal = Q.clone();
+    const mid = root.clone().add(upperBind.clone().applyQuaternion(rootGlobal));
+    const end = mid.clone().add(lowerBind.clone().applyQuaternion(midGlobal));
+    const target = new THREE.Vector3(0.5, 0.8, 0.1);
+    const sol = solveTwoBoneIK(root, mid, end, target, rootGlobal, midGlobal, Q.clone(), new THREE.Quaternion());
+    const newRootGlobal = sol.rootLocal.clone(); // parent identity
+    const newMid = root.clone().add(upperBind.clone().applyQuaternion(newRootGlobal));
+    const newMidGlobal = newRootGlobal.clone().multiply(sol.midLocal);
+    const newEnd = newMid.clone().add(lowerBind.clone().applyQuaternion(newMidGlobal));
+    expect(newEnd.distanceTo(target)).toBeLessThan(0.02);
+  });
+
   it('exposes the four SMPL-X limb chains', () => {
     expect(Object.keys(IK_CHAINS)).toEqual(['L_arm', 'R_arm', 'L_leg', 'R_leg']);
     expect(IK_CHAINS.L_arm).toEqual({ root: 'L_Shoulder', mid: 'L_Elbow', end: 'L_Wrist' });

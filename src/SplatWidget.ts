@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { SplatEdit, SplatEditSdf, SplatEditSdfType } from '@sparkjsdev/spark';
 import { BodyLookAt, REST_POSE, forwardKinematics } from './dimensions/BodyLookAt';
+import { IK_CHAINS, solveTwoBoneIK } from './dimensions/BodyIK';
 import { CameraSphere } from './dimensions/CameraSphere';
 import { CursorTracking } from './dimensions/CursorTracking';
 import { GhostEffect } from './dimensions/GhostEffect';
@@ -36,10 +37,100 @@ export class SplatWidget extends HTMLElement {
   private blinkEdit: { left: SplatEditSdf; right: SplatEditSdf; edit: SplatEdit } | null = null;
   private exprBasis: ExpressionBasisApplier | null = null;
   private _assetType: AssetType = 'head';
+  /** Editor pose-authoring: freeze the look-at to neutral so IK handles match the body. */
+  poseAuthoring = false;
 
   /** Asset type of the loaded bundle ('head' until a manifest says otherwise). */
   get assetType(): AssetType {
     return this._assetType;
+  }
+
+  // ── Body IK authoring API (consumed by the editor's drag handles) ──
+
+  /** Resting pose + the currently authored pose (no look-at) — the frame IK solves from. */
+  private bodyLocalRots(): Map<string, THREE.Quaternion> {
+    const localRots = new Map<string, THREE.Quaternion>(REST_POSE);
+    const pose = this._stateMachine?.currentFrame.pose ?? {};
+    for (const j of Object.keys(pose)) {
+      const q = pose[j];
+      localRots.set(j, new THREE.Quaternion(q[0], q[1], q[2], q[3]));
+    }
+    return localRots;
+  }
+
+  /** Project a world point to canvas pixel coordinates (null if behind the camera). */
+  projectToScreen(world: THREE.Vector3): [number, number] | null {
+    if (!this.spark) return null;
+    const ndc = world.clone().project(this.spark.camera);
+    if (ndc.z > 1) return null;
+    const rect = this.spark.canvas.getBoundingClientRect();
+    return [(ndc.x * 0.5 + 0.5) * rect.width, (-ndc.y * 0.5 + 0.5) * rect.height];
+  }
+
+  /** Unproject a canvas point onto the camera-facing plane through `through`. */
+  private unprojectToPlane(sx: number, sy: number, through: THREE.Vector3): THREE.Vector3 | null {
+    if (!this.spark) return null;
+    const rect = this.spark.canvas.getBoundingClientRect();
+    const cam = this.spark.camera;
+    const ndcX = (sx / rect.width) * 2 - 1;
+    const ndcY = -((sy / rect.height) * 2 - 1);
+    const origin = cam.position.clone();
+    const dir = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(cam).sub(origin).normalize();
+    const normal = new THREE.Vector3();
+    cam.getWorldDirection(normal);
+    const denom = dir.dot(normal);
+    if (Math.abs(denom) < 1e-6) return null;
+    const t = through.clone().sub(origin).dot(normal) / denom;
+    return origin.add(dir.multiplyScalar(t));
+  }
+
+  /** End-effector handle positions (canvas px) for each IK limb chain. */
+  bodyIKHandles(): { chain: string; sx: number; sy: number }[] {
+    if (this._assetType !== 'body' || !this.spark) return [];
+    const world = forwardKinematics(this.spark.bones, this.bodyLocalRots());
+    const idxByName = new Map(this.spark.bones.map((b) => [b.name, b.idx]));
+    const out: { chain: string; sx: number; sy: number }[] = [];
+    for (const [key, chain] of Object.entries(IK_CHAINS)) {
+      const idx = idxByName.get(chain.end);
+      const posed = idx !== undefined ? world.get(idx) : undefined;
+      const s = posed ? this.projectToScreen(posed.pos) : null;
+      if (s) out.push({ chain: key, sx: s[0], sy: s[1] });
+    }
+    return out;
+  }
+
+  /** Solve IK so `chainKey`'s end effector reaches a canvas point; returns the joint
+   * LOCAL quats (xyzw) to store in the state's pose, or null if not solvable. */
+  solveLimbToScreen(
+    chainKey: string,
+    sx: number,
+    sy: number,
+  ): { joint: string; quat: [number, number, number, number] }[] | null {
+    const chain = IK_CHAINS[chainKey];
+    if (this._assetType !== 'body' || !this.spark || !chain) return null;
+    const byName = new Map(this.spark.bones.map((b) => [b.name, b]));
+    const rootB = byName.get(chain.root);
+    const midB = byName.get(chain.mid);
+    const endB = byName.get(chain.end);
+    if (!rootB || !midB || !endB) return null;
+    const localRots = this.bodyLocalRots();
+    const world = forwardKinematics(this.spark.bones, localRots);
+    const wRoot = world.get(rootB.idx);
+    const wMid = world.get(midB.idx);
+    const wEnd = world.get(endB.idx);
+    if (!wRoot || !wMid || !wEnd) return null;
+    const target = this.unprojectToPlane(sx, sy, wEnd.pos);
+    if (!target) return null;
+    const sol = solveTwoBoneIK(
+      wRoot.pos, wMid.pos, wEnd.pos, target,
+      wRoot.quat, wMid.quat,
+      localRots.get(chain.root) ?? new THREE.Quaternion(),
+      localRots.get(chain.mid) ?? new THREE.Quaternion(),
+    );
+    return [
+      { joint: chain.root, quat: [sol.rootLocal.x, sol.rootLocal.y, sol.rootLocal.z, sol.rootLocal.w] },
+      { joint: chain.mid, quat: [sol.midLocal.x, sol.midLocal.y, sol.midLocal.z, sol.midLocal.w] },
+    ];
   }
 
   static get observedAttributes(): string[] {
@@ -316,8 +407,10 @@ export class SplatWidget extends HTMLElement {
       const q = pose[joint];
       localRots.set(joint, new THREE.Quaternion(q[0], q[1], q[2], q[3]));
     }
-    const look = this.bodyLookAt.localRotations(this.cursor.ndcX, this.cursor.ndcY, tracking.head ?? 0, tracking.torso ?? 0);
-    for (const [joint, quat] of look) localRots.set(joint, quat);
+    if (!this.poseAuthoring) {
+      const look = this.bodyLookAt.localRotations(this.cursor.ndcX, this.cursor.ndcY, tracking.head ?? 0, tracking.torso ?? 0);
+      for (const [joint, quat] of look) localRots.set(joint, quat);
+    }
 
     // Spark needs every bone's current transform each frame (unset joints blank the
     // render once any joint moves); FK provides all 55.

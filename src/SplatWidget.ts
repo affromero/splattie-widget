@@ -211,6 +211,13 @@ export class SplatWidget extends HTMLElement {
   private startRenderLoop(): void {
     const { renderer, scene, camera } = this.spark!;
 
+    // Respect prefers-reduced-motion: render the resting pose once and stop, so
+    // there's no idle float, blink, saccade, or cursor tracking.
+    if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.renderStaticFrame();
+      return;
+    }
+
     renderer.setAnimationLoop((timeMs: number) => {
       this.frameCount++;
       if (!this.stateMachine || !this.spark) return;
@@ -298,6 +305,30 @@ export class SplatWidget extends HTMLElement {
         }
       }
     });
+  }
+
+  private renderStaticFrame(): void {
+    if (!this.spark || !this.stateMachine) return;
+    const { renderer, scene, camera } = this.spark;
+    const frame = this.stateMachine.currentFrame;
+    const mesh = this.spark.splatMesh as unknown as THREE.Object3D;
+
+    mesh.position.set(0, 0, 0);
+    mesh.rotation.set(0, 0, 0);
+    this.objectRotation.apply(mesh, frame.rotation);
+    this.cameraSphere.apply(camera, frame.camera);
+
+    // Cursor smoothing never runs, so applySkinning sees centered eyes + the
+    // resting expression — a neutral, still pose.
+    if (this.spark.skinning && this.spark.bones.length > 0) {
+      this.applySkinning(this.spark.skinning, this.spark.bones, frame);
+    }
+    if (this.exprBasis && this.spark.packedArray && this.spark.packedSplatsRef) {
+      const updated = this.exprBasis.apply(this.spark.packedArray, frame.expression);
+      if (updated) this.spark.packedSplatsRef.needsUpdate = true;
+    }
+
+    renderer.render(scene, camera);
   }
 
   private applySkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {

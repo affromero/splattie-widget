@@ -12,7 +12,6 @@ import { HitDetector } from './interaction/HitDetector';
 import { createSparkInstance } from './renderer/SparkSetup';
 import type { BoneInfo, SparkInstance } from './renderer/SparkSetup';
 import { ExpressionBasisApplier, loadExpressionBasis } from './features/ExpressionBasis';
-import { SEMANTIC_EXPRESSION_NAMES, expandSemantic } from './features/SemanticExpression';
 import { createDefaultConfig, loadConfig, type AssetType } from './state/StateConfig';
 import { StateMachine } from './state/StateMachine';
 import type { SplattieManifest, WidgetConfig } from './types';
@@ -41,11 +40,6 @@ export class SplatWidget extends HTMLElement {
   /** Asset type of the loaded bundle ('head' until a manifest says otherwise). */
   get assetType(): AssetType {
     return this._assetType;
-  }
-
-  /** Friendly head expression names that map to ARKit blendshapes (for the editor). */
-  get expressionVocabulary(): readonly string[] {
-    return SEMANTIC_EXPRESSION_NAMES;
   }
 
   static get observedAttributes(): string[] {
@@ -257,17 +251,18 @@ export class SplatWidget extends HTMLElement {
 
       // Expression basis - per-splat position offsets from FLAME blendshapes
       if (this.exprBasis && this.spark.packedArray && this.spark.packedSplatsRef) {
-        // ARKit blendshape weights are [0,1]; the basis vectors are the full
-        // deformation at weight 1, so apply at scale 1.0 (not the PCA 3.0).
-        const updated = this.exprBasis.apply(this.spark.packedArray, expandSemantic(frame.expression), 1.0);
+        const updated = this.exprBasis.apply(this.spark.packedArray, frame.expression);
         if (updated) this.spark.packedSplatsRef.needsUpdate = true;
       }
 
-      // Auto-blink via SplatEdit (eyeSquint is an ARKit blendshape now, on the basis).
+      // Blink + squint via SplatEdit
       if (this.blinkEdit) {
-        const blinkVal = this.autoBlink.getWeights().eyeBlinkLeft ?? 0;
-        this.blinkEdit.left.opacity = 1 - blinkVal;
-        this.blinkEdit.right.opacity = 1 - blinkVal;
+        const blink = this.autoBlink.getWeights();
+        const blinkVal = blink.eyeBlinkLeft ?? 0;
+        const squint = frame.expression.eyeSquint ?? 0;
+        const combined = Math.min(1, blinkVal + squint);
+        this.blinkEdit.left.opacity = 1 - combined;
+        this.blinkEdit.right.opacity = 1 - combined;
       }
 
       // Render
@@ -371,11 +366,44 @@ export class SplatWidget extends HTMLElement {
       sk.setBoneQuatPos(eye.idx, q, new THREE.Vector3(...eye.pos));
     }
 
-    // Jaw inherits the neck rotation. jawOpen and all facial expressions
-    // (smile/brows/nose/cheeks) are true ARKit blendshapes applied per-splat on
-    // the basis (see exprBasis.apply above), not bones.
+    // Jaw - expression jawOpen only, inherits neck rotation
     if (jaw) {
-      sk.setBoneQuatPos(jaw.idx, neckQ.clone(), new THREE.Vector3(...jaw.pos));
+      const jawAngle = frame.expression.jawOpen ?? 0;
+      const localJaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), jawAngle);
+      const jq = neckQ.clone().multiply(localJaw);
+      sk.setBoneQuatPos(jaw.idx, jq, new THREE.Vector3(...jaw.pos));
+    }
+
+    // Virtual bones - translate from rest position to simulate expressions
+    for (const bone of bones) {
+      if (!bone.virtual) continue;
+      const rest = new THREE.Vector3(...bone.pos);
+      const off = new THREE.Vector3(0, 0, 0);
+      const expr = frame.expression;
+
+      if (bone.name === 'browL' || bone.name === 'browR') {
+        const side = bone.name === 'browL' ? 'L' : 'R';
+        const raise = expr[`browRaise${side}`] ?? expr.browRaise ?? 0;
+        const frown = expr[`browFrown${side}`] ?? expr.browFrown ?? 0;
+        off.y += raise * 0.08 - frown * 0.05;
+        const inward = bone.name === 'browL' ? -1 : 1;
+        off.x += frown * 0.015 * inward;
+      } else if (bone.name === 'mouthCornerL' || bone.name === 'mouthCornerR') {
+        const sign = bone.name === 'mouthCornerL' ? 1 : -1;
+        off.y += (expr.smile ?? 0) * 0.06 - (expr.mouthFrown ?? 0) * 0.05;
+        off.x += (expr.smile ?? 0) * 0.015 * sign;
+        off.x -= (expr.lipPucker ?? 0) * 0.025 * sign;
+      } else if (bone.name === 'cheekL' || bone.name === 'cheekR') {
+        const sign = bone.name === 'cheekL' ? 1 : -1;
+        off.x += (expr.cheekPuff ?? 0) * 0.04 * sign;
+        off.z += (expr.cheekPuff ?? 0) * 0.02;
+      } else if (bone.name === 'noseBridge') {
+        off.y += (expr.noseSneer ?? 0) * 0.025;
+        off.z += (expr.noseSneer ?? 0) * 0.01;
+      }
+
+      rest.add(off);
+      sk.setBoneQuatPos(bone.idx, neckQ, rest);
     }
 
     sk.updateBones();

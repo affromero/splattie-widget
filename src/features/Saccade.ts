@@ -1,15 +1,5 @@
 import { expSmooth } from './GazeMath';
-
-export interface SaccadeConfig {
-  /** When false, update() always returns a zero offset. */
-  enabled: boolean;
-  /** Max offset magnitude in NDC units (the radius of the target disc). */
-  amplitude: number;
-  /** Dwell time between darts, in ms, sampled uniformly from [min, max]. */
-  intervalMs: [number, number];
-  /** Approximate duration of the quick move toward a new target, in ms. */
-  moveMs: number;
-}
+import type { SaccadeConfig } from '../types';
 
 export const DEFAULT_SACCADE_CONFIG: SaccadeConfig = {
   enabled: true,

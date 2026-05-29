@@ -39,10 +39,37 @@ export interface AutoBlinkConfig {
   duration: number;
 }
 
+export interface SaccadeConfig {
+  /** When false, the eyes produce no micro-saccade offset. */
+  enabled: boolean;
+  /** Max offset magnitude in NDC units (radius of the target disc). */
+  amplitude: number;
+  /** Dwell time between darts (ms), sampled uniformly from [min, max]. */
+  intervalMs: [number, number];
+  /** Approximate duration of the quick move toward a new target (ms). */
+  moveMs: number;
+}
+
+export interface GazeConfig {
+  /** Opt-in eye-follow strength multiplier (default 1.0). Applied to eyes only. */
+  intensity: number;
+  /** Cursor smoothing time-constant in seconds (larger = calmer). */
+  smoothingTau: number;
+  /** Radial deadzone radius in NDC (ignores tiny jitter near center). */
+  deadzone: number;
+  /** Max local eye yaw/pitch and neck yaw/pitch in radians (anatomical clamps). */
+  maxEyeYaw: number;
+  maxEyePitch: number;
+  maxNeckYaw: number;
+  maxNeckPitch: number;
+  saccade: SaccadeConfig;
+}
+
 export interface WidgetConfig {
   defaults: {
     camera: CameraConfig;
     autoBlink?: AutoBlinkConfig;
+    gaze: GazeConfig;
   };
   states: Record<string, StateDefinition>;
   transitions: Record<string, TransitionConfig>;

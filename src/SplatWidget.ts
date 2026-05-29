@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { SplatEdit, SplatEditSdf, SplatEditSdfType } from '@sparkjsdev/spark';
 import { CameraSphere } from './dimensions/CameraSphere';
-import { CursorTracking } from './dimensions/CursorTracking';
 import { GhostEffect } from './dimensions/GhostEffect';
 import { ObjectRotation } from './dimensions/ObjectRotation';
 import { AutoBlink } from './features/AutoBlink';
@@ -17,9 +16,6 @@ import { StateMachine } from './state/StateMachine';
 import type { SplattieManifest, WidgetConfig } from './types';
 import { applyDeadzone, clampAbs } from './features/GazeMath';
 
-// Gaze taming defaults (formalized into WidgetConfig.defaults.gaze in a later phase).
-const GAZE_TAU = 0.18; // cursor smoothing time-constant (seconds)
-const GAZE_DEADZONE = 0.06; // radial deadzone radius (NDC)
 const SACCADE_SUPPRESS_VEL = 0.6; // smoothed-cursor speed (NDC/s) at which saccades fully suppress
 
 export class SplatWidget extends HTMLElement {
@@ -29,7 +25,6 @@ export class SplatWidget extends HTMLElement {
   private ghost = new GhostEffect();
   private cameraSphere = new CameraSphere();
   private objectRotation = new ObjectRotation();
-  private cursorTracking = new CursorTracking();
   private autoBlink = new AutoBlink();
   private saccade = new Saccade();
   private gazeSaccade = { x: 0, y: 0 };
@@ -134,6 +129,7 @@ export class SplatWidget extends HTMLElement {
       if (this.config.defaults.autoBlink) {
         this.autoBlink = new AutoBlink(this.config.defaults.autoBlink);
       }
+      this.saccade = new Saccade(this.config.defaults.gaze.saccade);
 
       this.spark = await createSparkInstance(this, splatUrl, bgColor, bonesUrl, weightsUrl);
       this.events.attachClick(this);
@@ -224,7 +220,7 @@ export class SplatWidget extends HTMLElement {
       deltaTime = Math.min(deltaTime, 0.1); // clamp big gaps (e.g. after tab-away)
       this.lastFrameMs = timeMs;
       this.stateMachine.update(deltaTime);
-      this.cursor.update(deltaTime, GAZE_TAU);
+      this.cursor.update(deltaTime, this.config!.defaults.gaze.smoothingTau);
 
       // Saccades: suppressed while the cursor is actively moving (smooth pursuit).
       const cursorVel = Math.hypot(
@@ -317,21 +313,24 @@ export class SplatWidget extends HTMLElement {
     const rightEye = byName.get('rightEye');
 
     const tracking = frame.tracking;
+    const g = this.config!.defaults.gaze;
 
     // Damped + deadzoned cursor gaze (clamped to NDC range). Shared by neck + eyes
     // so tiny jitter near center is ignored and the eyes ease in instead of snapping.
     const [gazeNdcX, gazeNdcY] = applyDeadzone(
       clampAbs(this.cursor.smoothX, 1),
       clampAbs(this.cursor.smoothY, 1),
-      GAZE_DEADZONE,
+      g.deadzone,
     );
 
-    // Neck - computed first so children inherit its rotation
+    // Neck - computed first so children inherit its rotation. Neck deliberately
+    // ignores `intensity`: a calm head with lively eyes is what keeps strong
+    // eye-follow from reading robotic.
     const exprNeckPitch = frame.expression.neckTilt ?? 0;
     const exprNeckYaw = frame.expression.neckYaw ?? 0;
     const exprNeckRoll = frame.expression.neckRoll ?? 0;
-    const neckYaw = gazeNdcX * 0.08 * tracking.head + exprNeckYaw;
-    const neckPitch = gazeNdcY * 0.05 * tracking.head + exprNeckPitch;
+    const neckYaw = clampAbs(gazeNdcX * g.maxNeckYaw * tracking.head, g.maxNeckYaw) + exprNeckYaw;
+    const neckPitch = clampAbs(gazeNdcY * g.maxNeckPitch * tracking.head, g.maxNeckPitch) + exprNeckPitch;
     const neckQ = new THREE.Quaternion();
     if (neck) {
       neckQ.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), exprNeckRoll));
@@ -343,8 +342,10 @@ export class SplatWidget extends HTMLElement {
     // Eyes - cursor tracking + gaze offset, inherits neck rotation
     const gazeX = frame.expression.gazeX ?? 0;
     const gazeY = frame.expression.gazeY ?? 0;
-    const eyeYaw = (gazeNdcX + this.gazeSaccade.x) * 0.09 * tracking.eyes + gazeX;
-    const eyePitch = (gazeNdcY + this.gazeSaccade.y) * 0.04 * tracking.eyes + gazeY;
+    const eyeYaw =
+      clampAbs((gazeNdcX + this.gazeSaccade.x) * g.maxEyeYaw * g.intensity * tracking.eyes, g.maxEyeYaw) + gazeX;
+    const eyePitch =
+      clampAbs((gazeNdcY + this.gazeSaccade.y) * g.maxEyePitch * g.intensity * tracking.eyes, g.maxEyePitch) + gazeY;
     for (const eye of [leftEye, rightEye]) {
       if (!eye) continue;
       const localQ = new THREE.Quaternion();

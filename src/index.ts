@@ -8,7 +8,9 @@ export { createDefaultConfig, loadConfig, mergeWithDefaults } from './state/Stat
 export type {
   AutoBlinkConfig,
   CameraConfig,
+  GazeConfig,
   GhostConfig,
+  SaccadeConfig,
   SplatWidgetEvents,
   SplattieManifest,
   StateDefinition,

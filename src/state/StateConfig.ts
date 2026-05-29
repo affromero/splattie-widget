@@ -12,7 +12,7 @@ const DEFAULT_STATE: StateDefinition = {
 
 export type AssetType = 'head' | 'body' | 'object';
 
-const BODY_CAMERA: CameraConfig = { theta: 0, phi: 90, radius: 2.4, lookAt: 'auto', fov: 45 };
+const BODY_CAMERA: CameraConfig = { theta: 0, phi: 90, radius: 3.3, lookAt: 'auto', fov: 45 };
 
 /** Body default config: head/torso look-at tracking, no FLAME expressions, framed
  * for a standing figure. Mirrors bundle.py's DEFAULT_STATES_BODY so a body bundle's
@@ -31,14 +31,14 @@ function createBodyConfig(): WidgetConfig {
       hover: {
         ghost: { amplitude: 0.006, frequency: 0.5, wobble: 0.3 },
         expression: {},
-        camera: { theta: 0, phi: 90, radius: 2.2, fov: 45 },
+        camera: { theta: 0, phi: 90, radius: 3.025, fov: 45 },
         rotation: [0, 0, 0],
         tracking: { head: 1.0, torso: 0.5 },
       },
       click: {
         ghost: { amplitude: 0.002, frequency: 0.8, wobble: 0.1 },
         expression: {},
-        camera: { theta: 0, phi: 88, radius: 2.0, fov: 48 },
+        camera: { theta: 0, phi: 88, radius: 2.75, fov: 48 },
         rotation: [0, 0, 0],
         tracking: { head: 0.6, torso: 0.2 },
       },

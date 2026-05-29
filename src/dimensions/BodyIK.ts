@@ -15,6 +15,15 @@ export const IK_CHAINS: Record<string, IKChain> = {
   R_leg: { root: 'R_Hip', mid: 'R_Knee', end: 'R_Ankle' },
 };
 
+/** Bend-plane pole per limb (world dir the mid joint juts toward): elbows back,
+ * knees forward. The body faces +Z (toward the camera). */
+export const IK_POLES: Record<string, [number, number, number]> = {
+  L_arm: [0, 0, -1],
+  R_arm: [0, 0, -1],
+  L_leg: [0, 0, 1],
+  R_leg: [0, 0, 1],
+};
+
 export interface TwoBoneSolution {
   rootLocal: THREE.Quaternion;
   midLocal: THREE.Quaternion;
@@ -57,6 +66,7 @@ export function solveTwoBoneIK(
   midGlobal: THREE.Quaternion,
   rootLocal: THREE.Quaternion,
   midLocal: THREE.Quaternion,
+  pole: THREE.Vector3 | null = null,
   eps = 0.01,
 ): TwoBoneSolution {
   const lab = b.distanceTo(a);
@@ -83,8 +93,10 @@ export function solveTwoBoneIK(
   const acAb1 = Math.acos(clampCos((lab * lab + lat * lat - lcb * lcb) / (2 * lab * lat)));
   const baBc1 = Math.acos(clampCos((lab * lab + lcb * lcb - lat * lat) / (2 * lab * lcb)));
 
-  // Bend plane normal; fall back to a stable axis if the limb is nearly straight.
-  let axis0 = ca.clone().cross(ba);
+  // Bend plane normal. A pole forces the limb to bend in its natural plane (elbows
+  // back, knees forward) instead of the current — often unstable, sideways — plane.
+  let axis0 = pole ? ca.clone().cross(pole) : ca.clone().cross(ba);
+  if (axis0.lengthSq() < 1e-8) axis0 = ca.clone().cross(ba);
   if (axis0.lengthSq() < 1e-8) axis0 = ca.clone().cross(new THREE.Vector3(0, 0, 1));
   if (axis0.lengthSq() < 1e-8) axis0 = ca.clone().cross(new THREE.Vector3(0, 1, 0));
   axis0.normalize();

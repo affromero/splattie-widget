@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { SplatEdit, SplatEditSdf, SplatEditSdfType } from '@sparkjsdev/spark';
 import { BodyLookAt, REST_POSE, forwardKinematics } from './dimensions/BodyLookAt';
-import { IK_CHAINS, clampQuatNear, solveTwoBoneIK } from './dimensions/BodyIK';
+import { IK_CHAINS, IK_POLES, clampQuatNear, solveTwoBoneIK } from './dimensions/BodyIK';
 import { CameraSphere } from './dimensions/CameraSphere';
 import { CursorTracking } from './dimensions/CursorTracking';
 import { GhostEffect } from './dimensions/GhostEffect';
@@ -121,16 +121,19 @@ export class SplatWidget extends HTMLElement {
     if (!wRoot || !wMid || !wEnd) return null;
     const target = this.unprojectToPlane(sx, sy, wEnd.pos);
     if (!target) return null;
+    const p = IK_POLES[chainKey];
+    const pole = p ? new THREE.Vector3(p[0], p[1], p[2]) : null;
     const sol = solveTwoBoneIK(
       wRoot.pos, wMid.pos, wEnd.pos, target,
       wRoot.quat, wMid.quat,
       localRots.get(chain.root) ?? new THREE.Quaternion(),
       localRots.get(chain.mid) ?? new THREE.Quaternion(),
+      pole,
     );
-    // Bound each joint near its resting pose — beyond ~90° the photo-mesh stretches.
-    const MAX_DELTA = 1.6;
-    const root = clampQuatNear(sol.rootLocal, REST_POSE.get(chain.root) ?? new THREE.Quaternion(), MAX_DELTA);
-    const mid = clampQuatNear(sol.midLocal, REST_POSE.get(chain.mid) ?? new THREE.Quaternion(), MAX_DELTA);
+    // Bound each joint near its resting pose: a moderate cone for the root, a tight
+    // bend for the mid — past these the photo-mesh stretches into thin tendrils.
+    const root = clampQuatNear(sol.rootLocal, REST_POSE.get(chain.root) ?? new THREE.Quaternion(), 1.2);
+    const mid = clampQuatNear(sol.midLocal, REST_POSE.get(chain.mid) ?? new THREE.Quaternion(), 0.7);
     return [
       { joint: chain.root, quat: [root.x, root.y, root.z, root.w] },
       { joint: chain.mid, quat: [mid.x, mid.y, mid.z, mid.w] },

@@ -69,20 +69,19 @@ describe('lerpTracking', () => {
     expect(result.head).toBeCloseTo(0.5);
   });
 
-  it('interpolates body tracking fields (armReach, shoulderFollow)', () => {
+  it('interpolates body torso look-at intensity', () => {
     const result = lerpTracking(
-      { eyes: 1, head: 0.2, armReach: 0, shoulderFollow: 1 },
-      { eyes: 1, head: 0.2, armReach: 1, shoulderFollow: 0 },
+      { head: 1, torso: 0 },
+      { head: 1, torso: 1 },
       0.5,
     );
-    expect(result.armReach).toBeCloseTo(0.5);
-    expect(result.shoulderFollow).toBeCloseTo(0.5);
+    expect(result.torso).toBeCloseTo(0.5);
   });
 
-  it('treats missing body fields as 0 (head states omit them)', () => {
-    const result = lerpTracking({ eyes: 1, head: 0 }, { eyes: 1, head: 1 }, 0.5);
-    expect(result.armReach).toBeCloseTo(0);
-    expect(result.shoulderFollow).toBeCloseTo(0);
+  it('treats missing fields as 0 (head states omit torso, body states omit eyes)', () => {
+    const result = lerpTracking({ head: 0 }, { head: 1 }, 0.5);
+    expect(result.torso).toBeCloseTo(0);
+    expect(result.eyes).toBeCloseTo(0);
   });
 });
 

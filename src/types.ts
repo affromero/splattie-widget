@@ -6,12 +6,12 @@ export interface GhostConfig {
 }
 
 export interface TrackingConfig {
-  eyes: number;
+  /** Head-only: how strongly the eyes track the cursor. */
+  eyes?: number;
+  /** How strongly the head turns toward the cursor (head + body look-at). */
   head: number;
-  /** Body-only: how far the nearer arm reaches toward the cursor via IK. */
-  armReach?: number;
-  /** Body-only: how much the shoulders rotate to follow head yaw. */
-  shoulderFollow?: number;
+  /** Body-only: how much the torso (spine) leans toward the cursor (look-at). */
+  torso?: number;
 }
 
 export interface CameraConfig {

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SplatEdit, SplatEditSdf, SplatEditSdfType } from '@sparkjsdev/spark';
+import { BodyLookAt } from './dimensions/BodyLookAt';
 import { CameraSphere } from './dimensions/CameraSphere';
 import { CursorTracking } from './dimensions/CursorTracking';
 import { GhostEffect } from './dimensions/GhostEffect';
@@ -23,6 +24,7 @@ export class SplatWidget extends HTMLElement {
   private cameraSphere = new CameraSphere();
   private objectRotation = new ObjectRotation();
   private cursorTracking = new CursorTracking();
+  private bodyLookAt = new BodyLookAt();
   private autoBlink = new AutoBlink();
   private cursor = new CursorTracker();
   private hitDetector = new HitDetector();
@@ -136,7 +138,7 @@ export class SplatWidget extends HTMLElement {
         this.autoBlink = new AutoBlink(this.config.defaults.autoBlink);
       }
 
-      this.spark = await createSparkInstance(this, splatUrl, bgColor, bonesUrl, weightsUrl);
+      this.spark = await createSparkInstance(this, splatUrl, bgColor, bonesUrl, weightsUrl, this._assetType);
       this.events.attachClick(this);
       this.addEventListener('splatclick', () => {
         if (!this.hasAttribute('editor-mode') && this._stateMachine) {
@@ -296,11 +298,27 @@ export class SplatWidget extends HTMLElement {
     });
   }
 
-  // Body skinning (SMPL-X: head/eye gaze + shoulder follow + CCD IK arm) lands in
-  // Phase 1.D. Until then a body bundle loads up to here and errors loudly rather
-  // than silently rendering an un-animated body.
-  private applyBodySkinning(_skinning: unknown, _bones: BoneInfo[], _frame: typeof StateMachine.prototype.currentFrame): void {
-    throw new Error('[splattie] body skinning not implemented until Phase 1.D — load a head bundle, or ship 1.D first.');
+  // Body skinning (SMPL-X): head + torso look-at toward the cursor. Rotates the
+  // spine→neck→head chain (FK-composed) via Spark's SplatSkinning; the rest of the
+  // 55 joints stay at their rest pose (set once at init). Pose-driven states (the
+  // editor's "machine states") layer on frame.expression in a later pass.
+  private applyBodySkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {
+    const sk = skinning as {
+      setBoneQuatPos: (idx: number, q: THREE.Quaternion, p: THREE.Vector3) => void;
+      updateBones: () => void;
+    };
+    const byName = new Map(bones.map((b) => [b.name, b]));
+    const tracking = frame.tracking;
+    const pose = this.bodyLookAt.compute(this.cursor.ndcX, this.cursor.ndcY, tracking.head ?? 0, tracking.torso ?? 0);
+
+    const set = (name: string, q: THREE.Quaternion): void => {
+      const bone = byName.get(name);
+      if (bone) sk.setBoneQuatPos(bone.idx, q, new THREE.Vector3(...bone.pos));
+    };
+    set('Spine_3', pose.spine3);
+    set('Neck', pose.neck);
+    set('Head', pose.head);
+    sk.updateBones();
   }
 
   private applyHeadSkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {
@@ -336,8 +354,8 @@ export class SplatWidget extends HTMLElement {
     const gazeY = frame.expression.gazeY ?? 0;
     const clampedX = Math.max(-1, Math.min(1, this.cursor.ndcX));
     const clampedY = Math.max(-1, Math.min(1, this.cursor.ndcY));
-    const eyeYaw = clampedX * 0.09 * tracking.eyes + gazeX;
-    const eyePitch = clampedY * 0.04 * tracking.eyes + gazeY;
+    const eyeYaw = clampedX * 0.09 * (tracking.eyes ?? 0) + gazeX;
+    const eyePitch = clampedY * 0.04 * (tracking.eyes ?? 0) + gazeY;
     for (const eye of [leftEye, rightEye]) {
       if (!eye) continue;
       const localQ = new THREE.Quaternion();

@@ -60,10 +60,9 @@ export function lerpRotation(
 
 export function lerpTracking(a: TrackingConfig, b: TrackingConfig, t: number): TrackingConfig {
   return {
-    eyes: lerpNumber(a.eyes, b.eyes, t),
+    eyes: lerpNumber(a.eyes ?? 0, b.eyes ?? 0, t),
     head: lerpNumber(a.head, b.head, t),
-    armReach: lerpNumber(a.armReach ?? 0, b.armReach ?? 0, t),
-    shoulderFollow: lerpNumber(a.shoulderFollow ?? 0, b.shoulderFollow ?? 0, t),
+    torso: lerpNumber(a.torso ?? 0, b.torso ?? 0, t),
   };
 }
 

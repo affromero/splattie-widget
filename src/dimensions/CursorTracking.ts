@@ -7,7 +7,7 @@ export class CursorTracking {
     tracking: TrackingConfig,
   ): Record<string, number> {
     const weights: Record<string, number> = {};
-    const eyeIntensity = tracking.eyes;
+    const eyeIntensity = tracking.eyes ?? 0;
     if (eyeIntensity <= 0) return weights;
 
     weights.eyeLookInLeft = Math.max(0, -ndcX) * eyeIntensity;

@@ -108,6 +108,7 @@ export async function createSparkInstance(
   backgroundColor: number,
   boneTreeUrl?: string,
   lbsWeightsUrl?: string,
+  assetType: 'head' | 'body' | 'object' = 'head',
 ): Promise<SparkInstance> {
   const { SparkRenderer, SplatMesh, SplatSkinning, SplatSkinningMode } = await import('@sparkjsdev/spark');
 
@@ -157,7 +158,46 @@ export async function createSparkInstance(
   const bones: BoneInfo[] = [];
   let baselinePositions: Float32Array | null = null;
 
-  if (boneTreeUrl && lbsWeightsUrl) {
+  if (boneTreeUrl && lbsWeightsUrl && assetType === 'body') {
+    // SMPL-X body rig: flat 55-joint skeleton + sparse top-K per-gaussian weights
+    // (produced by methods/lhm/bundle.py). No virtual bones — the look-at rotates
+    // the spine/neck/head chain directly.
+    const [skeleton, weights] = (await Promise.all([
+      fetch(boneTreeUrl).then((r) => r.json()),
+      fetch(lbsWeightsUrl).then((r) => r.json()),
+    ])) as [
+      { names: string[]; parents: number[]; restPositions: number[][] },
+      { numGaussians: number; k: number; indices: number[]; weights: number[] },
+    ];
+
+    skeleton.names.forEach((name, idx) => {
+      bones.push({ name, pos: skeleton.restPositions[idx] as [number, number, number], idx, parentIdx: skeleton.parents[idx] });
+    });
+
+    skinning = new SplatSkinning({
+      mesh: splatMesh,
+      numBones: bones.length,
+      mode: SplatSkinningMode.DUAL_QUATERNION,
+    });
+    const identityQuat = new THREE.Quaternion();
+    for (const bone of bones) {
+      skinning.setRestQuatPos(bone.idx, identityQuat, new THREE.Vector3(...bone.pos));
+    }
+
+    const k = weights.k;
+    const numSplats = Math.min(weights.numGaussians, skinning.numSplats);
+    for (let i = 0; i < numSplats; i++) {
+      const o = i * k;
+      skinning.setSplatBones(
+        i,
+        new THREE.Vector4(weights.indices[o] ?? 0, weights.indices[o + 1] ?? 0, weights.indices[o + 2] ?? 0, weights.indices[o + 3] ?? 0),
+        new THREE.Vector4(weights.weights[o] ?? 0, weights.weights[o + 1] ?? 0, weights.weights[o + 2] ?? 0, weights.weights[o + 3] ?? 0),
+      );
+    }
+
+    (splatMesh as unknown as { skinning: unknown }).skinning = skinning;
+    skinning.updateBones();
+  } else if (boneTreeUrl && lbsWeightsUrl) {
     const [boneTree, lbsWeights, splatPositions] = await Promise.all([
       fetch(boneTreeUrl).then((r) => r.json()),
       fetch(lbsWeightsUrl).then((r) => r.json()),

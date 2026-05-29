@@ -11,6 +11,7 @@ import {
   lerpState,
   lerpTracking,
 } from '../src/state/Interpolator';
+import { REST_POSE } from '../src/dimensions/BodyLookAt';
 import type { StateDefinition } from '../src/types';
 
 describe('lerpPose', () => {
@@ -24,10 +25,17 @@ describe('lerpPose', () => {
     expect(mid.L_Shoulder[3]).toBeCloseTo(Math.SQRT1_2, 4);
   });
 
-  it('treats undefined/missing as identity (rest) and tolerates undefined inputs', () => {
+  it('an unposed joint defaults to its resting rotation, not identity (no T-pose)', () => {
     expect(lerpPose(undefined, undefined, 0.5)).toEqual({});
-    const out = lerpPose(undefined, { L_Wrist: [0, 0, 1, 0] }, 0); // t=0 → identity
-    expect(out.L_Wrist[3]).toBeCloseTo(1, 4);
+    // L_Wrist isn't in REST_POSE, so its rest IS identity.
+    expect(lerpPose(undefined, { L_Wrist: [0, 0, 1, 0] }, 0).L_Wrist[3]).toBeCloseTo(1, 4);
+    // L_Shoulder IS in REST_POSE: posing it then lerping to a state that omits it
+    // lands at the resting shoulder (arms down), NOT identity (which is a T-pose).
+    const rest = REST_POSE.get('L_Shoulder')!;
+    const out = lerpPose({ L_Shoulder: [0, 0, 0, 1] }, {}, 1);
+    expect(out.L_Shoulder[3]).toBeCloseTo(rest.w, 4);
+    expect(out.L_Shoulder[2]).toBeCloseTo(rest.z, 4);
+    expect(Math.abs(out.L_Shoulder[3])).toBeLessThan(0.999); // not identity
   });
 });
 

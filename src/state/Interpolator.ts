@@ -1,8 +1,16 @@
 import * as THREE from 'three';
+import { REST_POSE } from '../dimensions/BodyLookAt';
 import type { CameraConfig, GhostConfig, StateDefinition, TrackingConfig, TransitionConfig } from '../types';
 
 type Quat = [number, number, number, number];
 const IDENTITY_QUAT: Quat = [0, 0, 0, 1];
+
+/** A joint absent from a state's pose sits at its RESTING rotation (arms down for
+ * shoulders/elbows; identity elsewhere) — NOT the bind/identity, which is a T-pose. */
+function restQuat(joint: string): Quat {
+  const q = REST_POSE.get(joint);
+  return q ? [q.x, q.y, q.z, q.w] : IDENTITY_QUAT;
+}
 
 type EasingFn = (t: number) => number;
 
@@ -72,9 +80,10 @@ export function lerpPose(
   const keys = new Set([...Object.keys(aa), ...Object.keys(bb)]);
   const result: Record<string, Quat> = {};
   for (const k of keys) {
-    // A joint present on only one side slerps from/to identity (rest).
-    const q = new THREE.Quaternion(...(aa[k] ?? IDENTITY_QUAT));
-    q.slerp(new THREE.Quaternion(...(bb[k] ?? IDENTITY_QUAT)), t);
+    // A joint present on only one side slerps from/to its RESTING rotation, so an
+    // unposed state shows the resting pose (arms down), never a T-pose.
+    const q = new THREE.Quaternion(...(aa[k] ?? restQuat(k)));
+    q.slerp(new THREE.Quaternion(...(bb[k] ?? restQuat(k))), t);
     result[k] = [q.x, q.y, q.z, q.w];
   }
   return result;

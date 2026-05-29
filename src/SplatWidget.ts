@@ -14,6 +14,11 @@ import { ExpressionBasisApplier, loadExpressionBasis } from './features/Expressi
 import { createDefaultConfig, loadConfig } from './state/StateConfig';
 import { StateMachine } from './state/StateMachine';
 import type { SplattieManifest, WidgetConfig } from './types';
+import { applyDeadzone, clampAbs } from './features/GazeMath';
+
+// Gaze taming defaults (formalized into WidgetConfig.defaults.gaze in a later phase).
+const GAZE_TAU = 0.18; // cursor smoothing time-constant (seconds)
+const GAZE_DEADZONE = 0.06; // radial deadzone radius (NDC)
 
 export class SplatWidget extends HTMLElement {
   private spark: SparkInstance | null = null;
@@ -213,6 +218,7 @@ export class SplatWidget extends HTMLElement {
       deltaTime = Math.min(deltaTime, 0.1); // clamp big gaps (e.g. after tab-away)
       this.lastFrameMs = timeMs;
       this.stateMachine.update(deltaTime);
+      this.cursor.update(deltaTime, GAZE_TAU);
       const frame = this.stateMachine.currentFrame;
 
       const mesh = this.spark.splatMesh as unknown as THREE.Object3D;
@@ -296,12 +302,20 @@ export class SplatWidget extends HTMLElement {
 
     const tracking = frame.tracking;
 
+    // Damped + deadzoned cursor gaze (clamped to NDC range). Shared by neck + eyes
+    // so tiny jitter near center is ignored and the eyes ease in instead of snapping.
+    const [gazeNdcX, gazeNdcY] = applyDeadzone(
+      clampAbs(this.cursor.smoothX, 1),
+      clampAbs(this.cursor.smoothY, 1),
+      GAZE_DEADZONE,
+    );
+
     // Neck - computed first so children inherit its rotation
     const exprNeckPitch = frame.expression.neckTilt ?? 0;
     const exprNeckYaw = frame.expression.neckYaw ?? 0;
     const exprNeckRoll = frame.expression.neckRoll ?? 0;
-    const neckYaw = this.cursor.ndcX * 0.08 * tracking.head + exprNeckYaw;
-    const neckPitch = this.cursor.ndcY * 0.05 * tracking.head + exprNeckPitch;
+    const neckYaw = gazeNdcX * 0.08 * tracking.head + exprNeckYaw;
+    const neckPitch = gazeNdcY * 0.05 * tracking.head + exprNeckPitch;
     const neckQ = new THREE.Quaternion();
     if (neck) {
       neckQ.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), exprNeckRoll));
@@ -313,10 +327,8 @@ export class SplatWidget extends HTMLElement {
     // Eyes - cursor tracking + gaze offset, inherits neck rotation
     const gazeX = frame.expression.gazeX ?? 0;
     const gazeY = frame.expression.gazeY ?? 0;
-    const clampedX = Math.max(-1, Math.min(1, this.cursor.ndcX));
-    const clampedY = Math.max(-1, Math.min(1, this.cursor.ndcY));
-    const eyeYaw = clampedX * 0.09 * tracking.eyes + gazeX;
-    const eyePitch = clampedY * 0.04 * tracking.eyes + gazeY;
+    const eyeYaw = gazeNdcX * 0.09 * tracking.eyes + gazeX;
+    const eyePitch = gazeNdcY * 0.04 * tracking.eyes + gazeY;
     for (const eye of [leftEye, rightEye]) {
       if (!eye) continue;
       const localQ = new THREE.Quaternion();

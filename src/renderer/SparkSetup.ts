@@ -5,44 +5,6 @@ export interface BoneInfo {
   pos: [number, number, number];
   idx: number;
   parentIdx: number;
-  virtual?: boolean;
-}
-
-function computeVirtualBones(bones: BoneInfo[]): BoneInfo[] {
-  const byName = new Map(bones.map(b => [b.name, b]));
-  const jawBone = byName.get('jaw');
-  const leftEyeBone = byName.get('leftEye');
-  const rightEyeBone = byName.get('rightEye');
-  if (!jawBone || !leftEyeBone || !rightEyeBone) return [];
-  const jaw = jawBone.pos;
-  const lEye = leftEyeBone.pos;
-  const rEye = rightEyeBone.pos;
-  const midX = (lEye[0] + rEye[0]) / 2;
-  const midY = (lEye[1] + rEye[1]) / 2;
-  const midZ = (lEye[2] + rEye[2]) / 2;
-  const eyeSep = Math.abs(lEye[0] - rEye[0]);
-
-  const mouthY = jaw[1] + (midY - jaw[1]) * 0.15;
-  const mouthZ = jaw[2] + (midZ - jaw[2]) * 0.17;
-  const cheekY = jaw[1] + (midY - jaw[1]) * 0.35;
-  const cheekZ = jaw[2] + (midZ - jaw[2]) * 0.25;
-  const noseY = jaw[1] + (midY - jaw[1]) * 0.55;
-  const noseZ = jaw[2] + (midZ - jaw[2]) * 0.45;
-
-  const neckBone = byName.get('neck');
-  const neckIdx = neckBone?.idx ?? 1;
-  const jawIdx = jawBone.idx;
-
-  const idx = bones.length;
-  return [
-    { name: 'browL', pos: [lEye[0], lEye[1] + 0.015, lEye[2]], idx: idx, parentIdx: neckIdx, virtual: true },
-    { name: 'browR', pos: [rEye[0], rEye[1] + 0.015, rEye[2]], idx: idx + 1, parentIdx: neckIdx, virtual: true },
-    { name: 'mouthCornerL', pos: [midX + eyeSep * 0.3, mouthY, mouthZ], idx: idx + 2, parentIdx: jawIdx, virtual: true },
-    { name: 'mouthCornerR', pos: [midX - eyeSep * 0.3, mouthY, mouthZ], idx: idx + 3, parentIdx: jawIdx, virtual: true },
-    { name: 'cheekL', pos: [lEye[0] + 0.01, cheekY, cheekZ], idx: idx + 4, parentIdx: neckIdx, virtual: true },
-    { name: 'cheekR', pos: [rEye[0] - 0.01, cheekY, cheekZ], idx: idx + 5, parentIdx: neckIdx, virtual: true },
-    { name: 'noseBridge', pos: [midX, noseY, noseZ], idx: idx + 6, parentIdx: neckIdx, virtual: true },
-  ];
 }
 
 async function parseSplatPositions(url: string): Promise<Float32Array> {
@@ -215,9 +177,6 @@ export async function createSparkInstance(
     }
     flattenBones(boneTree.bones[0], -1);
 
-    const virtualBones = computeVirtualBones(bones);
-    bones.push(...virtualBones);
-
     skinning = new SplatSkinning({
       mesh: splatMesh,
       numBones: bones.length,
@@ -230,47 +189,10 @@ export async function createSparkInstance(
     }
 
     const numSplats = Math.min(lbsWeights.length, skinning.numSplats);
-    const mouthBoneNames = new Set(['mouthCornerL', 'mouthCornerR']);
-    type Sigma3 = [number, number, number];
-    const sigmaByBone = new Map<number, Sigma3>();
-    for (const vb of virtualBones) {
-      sigmaByBone.set(vb.idx, mouthBoneNames.has(vb.name)
-        ? [0.035, 0.02, 0.035]
-        : [0.02, 0.02, 0.02]);
-    }
-
-    const byName = new Map(bones.map(b => [b.name, b]));
-    const jawIdx = byName.get('jaw')?.idx;
-    const leftEyeIdx = byName.get('leftEye')?.idx;
-    const rightEyeIdx = byName.get('rightEye')?.idx;
 
     for (let i = 0; i < numSplats; i++) {
       const origWeights = lbsWeights[i];
       const allWeights: [number, number][] = origWeights.map((val, idx) => [idx, val]);
-
-      if (virtualBones.length > 0 && i * 3 + 2 < splatPositions.length) {
-        const px = splatPositions[i * 3];
-        const py = splatPositions[i * 3 + 1];
-        const pz = splatPositions[i * 3 + 2];
-        const jawW = jawIdx !== undefined ? (origWeights[jawIdx] ?? 0) : 0;
-        const eyeLW = leftEyeIdx !== undefined ? (origWeights[leftEyeIdx] ?? 0) : 0;
-        const eyeRW = rightEyeIdx !== undefined ? (origWeights[rightEyeIdx] ?? 0) : 0;
-        const eyeW = Math.max(eyeLW, eyeRW);
-
-        for (const vb of virtualBones) {
-          if (vb.name.startsWith('brow') && (eyeW > 0.12 || py < vb.pos[1] - 0.005)) continue;
-          if (vb.name.startsWith('mouth') && jawW < 0.15) continue;
-          if (vb.name.startsWith('cheek') && jawW < 0.1 && eyeW > 0.3) continue;
-          if (vb.name === 'noseBridge' && eyeW > 0.4) continue;
-
-          const dx = px - vb.pos[0], dy = py - vb.pos[1], dz = pz - vb.pos[2];
-          const [sx, sy, sz] = sigmaByBone.get(vb.idx) ?? [0.02, 0.02, 0.02];
-          const nd2 = (dx * dx) / (2 * sx * sx) + (dy * dy) / (2 * sy * sy) + (dz * dz) / (2 * sz * sz);
-          const w = Math.exp(-nd2) * 3.0;
-          if (w > 0.01) allWeights.push([vb.idx, w]);
-        }
-      }
-
       allWeights.sort((a, b) => b[1] - a[1]);
       const top4 = allWeights.slice(0, 4);
       const sum = top4.reduce((s, p) => s + p[1], 0) || 1;

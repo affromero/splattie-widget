@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { SplatEdit, SplatEditSdf, SplatEditSdfType } from '@sparkjsdev/spark';
 import { BodyLookAt, REST_POSE, forwardKinematics } from './dimensions/BodyLookAt';
-import { IK_CHAINS, solveTwoBoneIK } from './dimensions/BodyIK';
+import { IK_CHAINS, clampQuatNear, solveTwoBoneIK } from './dimensions/BodyIK';
 import { CameraSphere } from './dimensions/CameraSphere';
 import { CursorTracking } from './dimensions/CursorTracking';
 import { GhostEffect } from './dimensions/GhostEffect';
@@ -127,9 +127,13 @@ export class SplatWidget extends HTMLElement {
       localRots.get(chain.root) ?? new THREE.Quaternion(),
       localRots.get(chain.mid) ?? new THREE.Quaternion(),
     );
+    // Bound each joint near its resting pose — beyond ~90° the photo-mesh stretches.
+    const MAX_DELTA = 1.6;
+    const root = clampQuatNear(sol.rootLocal, REST_POSE.get(chain.root) ?? new THREE.Quaternion(), MAX_DELTA);
+    const mid = clampQuatNear(sol.midLocal, REST_POSE.get(chain.mid) ?? new THREE.Quaternion(), MAX_DELTA);
     return [
-      { joint: chain.root, quat: [sol.rootLocal.x, sol.rootLocal.y, sol.rootLocal.z, sol.rootLocal.w] },
-      { joint: chain.mid, quat: [sol.midLocal.x, sol.midLocal.y, sol.midLocal.z, sol.midLocal.w] },
+      { joint: chain.root, quat: [root.x, root.y, root.z, root.w] },
+      { joint: chain.mid, quat: [mid.x, mid.y, mid.z, mid.w] },
     ];
   }
 

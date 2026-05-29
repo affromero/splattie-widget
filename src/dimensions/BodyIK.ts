@@ -22,6 +22,19 @@ export interface TwoBoneSolution {
 
 const clampCos = (x: number): number => Math.max(-1, Math.min(1, x));
 
+/**
+ * Clamp `q` so it sits within `maxRad` of the reference rotation `ref`. Keeps an
+ * IK-posed joint within a sane cone of its resting pose, so the skinned gaussians
+ * never reach the extreme rotations that stretch a photo-derived (LHM) mesh.
+ */
+export function clampQuatNear(q: THREE.Quaternion, ref: THREE.Quaternion, maxRad: number): THREE.Quaternion {
+  const delta = ref.clone().invert().multiply(q);
+  const angle = 2 * Math.acos(Math.min(1, Math.abs(delta.w)));
+  if (angle <= maxRad || angle < 1e-6) return q.clone();
+  const clamped = new THREE.Quaternion().slerpQuaternions(new THREE.Quaternion(), delta, maxRad / angle);
+  return ref.clone().multiply(clamped);
+}
+
 /** World-space axis expressed in the bone's local frame. */
 function toLocalAxis(globalRot: THREE.Quaternion, worldAxis: THREE.Vector3): THREE.Vector3 {
   return worldAxis.clone().applyQuaternion(globalRot.clone().invert());
@@ -48,7 +61,14 @@ export function solveTwoBoneIK(
 ): TwoBoneSolution {
   const lab = b.distanceTo(a);
   const lcb = b.distanceTo(c);
-  const lat = THREE.MathUtils.clamp(target.distanceTo(a), eps, lab + lcb - eps);
+  // Keep the limb between a sane fold and 95% of full reach: full extension is a
+  // singularity (unstable bend axis) and over-stretches the skinned gaussians.
+  const reach = lab + lcb;
+  const lat = THREE.MathUtils.clamp(
+    target.distanceTo(a),
+    Math.abs(lab - lcb) + 0.15 * reach,
+    0.95 * reach,
+  );
 
   const ca = c.clone().sub(a);
   const ba = b.clone().sub(a);

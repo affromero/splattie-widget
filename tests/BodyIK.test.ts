@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { IK_CHAINS, solveTwoBoneIK } from '../src/dimensions/BodyIK';
+import { IK_CHAINS, clampQuatNear, solveTwoBoneIK } from '../src/dimensions/BodyIK';
 
 /**
  * Apply the solved LOCAL rotations through the same FK math the widget uses
@@ -40,12 +40,13 @@ describe('solveTwoBoneIK', () => {
     }
   });
 
-  it('straightens toward an out-of-reach target (clamped to limb length)', () => {
+  it('reaches toward an out-of-reach target (clamped to 95% of limb length)', () => {
     const target = new THREE.Vector3(5, 0, 0); // far beyond reach (max 2)
     const end = endAfterSolve(a, b, c, target);
-    // End lands ~2 units from the root, pointing at the target (straight arm).
-    expect(end.distanceTo(a)).toBeGreaterThan(1.95);
-    expect(end.distanceTo(a)).toBeLessThan(2.0);
+    // End lands at ~95% of full reach (2), pointing at the target — kept just shy
+    // of the straight-arm singularity.
+    expect(end.distanceTo(a)).toBeGreaterThan(1.85);
+    expect(end.distanceTo(a)).toBeLessThan(1.92);
     expect(end.clone().normalize().dot(new THREE.Vector3(1, 0, 0))).toBeGreaterThan(0.99);
   });
 
@@ -78,6 +79,15 @@ describe('solveTwoBoneIK', () => {
     const newMidGlobal = newRootGlobal.clone().multiply(sol.midLocal);
     const newEnd = newMid.clone().add(lowerBind.clone().applyQuaternion(newMidGlobal));
     expect(newEnd.distanceTo(target)).toBeLessThan(0.02);
+  });
+
+  it('clampQuatNear bounds a rotation within maxRad of the reference', () => {
+    const ref = new THREE.Quaternion();
+    const far = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 2.0);
+    const clamped = clampQuatNear(far, ref, 1.0);
+    expect(clamped.angleTo(ref)).toBeCloseTo(1.0, 3); // clamped to the cone
+    const near = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.5);
+    expect(clampQuatNear(near, ref, 1.0).angleTo(near)).toBeLessThan(1e-6); // within → unchanged
   });
 
   it('exposes the four SMPL-X limb chains', () => {

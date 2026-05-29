@@ -14,16 +14,18 @@ function yawPitch(yaw: number, pitch: number): THREE.Quaternion {
 
 /**
  * Resting pose as LOCAL joint rotations. LHM bakes the body in the SMPL-X zero pose
- * (arms straight out, a T). FK rotates the shoulders down so the arms relax at the
+ * (arms straight out, a T). FK rotates the shoulders down so the arms relax toward the
  * sides — applied as a local rotation about the forward (Z) axis at each shoulder.
  */
 export const REST_POSE: ReadonlyMap<string, THREE.Quaternion> = new Map([
-  // Rotate the (baked T-pose) arms down to the sides (~1.25 rad). The photo-mesh arms
-  // stretch under this rotation, so bodies are framed head-to-hips by default, which
-  // crops the stretched lower-arms; zoom out (editor radius) to pose, accepting the
-  // softness on extended limbs.
-  ['L_Shoulder', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -1.25)],
-  ['R_Shoulder', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, 1.25)],
+  // Rotate the baked T-pose arms down into a relaxed near-A-pose (~0.7 rad). Going
+  // further (toward vertical) over-rotates the photo-avatar's sparse arm gaussians so
+  // they smear into the torso and read as a vague central blob; ~0.7 keeps them near
+  // their dense baked spread, so the arms stay distinct limbs at the sides. The lower
+  // arm is re-skinned rigidly to the elbow (backend `reweight_lower_arm_rigid`) so it
+  // swings as one piece rather than stretching toward the feet.
+  ['L_Shoulder', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -0.7)],
+  ['R_Shoulder', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, 0.7)],
   ['L_Elbow', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -0.15)],
   ['R_Elbow', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, 0.15)],
 ]);

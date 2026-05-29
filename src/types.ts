@@ -3,6 +3,8 @@ export interface GhostConfig {
   frequency: number;
   wobble: number;
   phase?: number;
+  /** Slow idle head-yaw drift (rad), summed low-frequency sines. At-rest only. */
+  driftYaw?: number;
 }
 
 export interface TrackingConfig {

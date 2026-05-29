@@ -3,7 +3,7 @@ import type { CameraConfig, StateDefinition, WidgetConfig } from '../types';
 const DEFAULT_CAMERA: CameraConfig = { theta: 0, phi: 75, radius: 2.5, lookAt: 'auto', fov: 50 };
 
 const DEFAULT_STATE: StateDefinition = {
-  ghost: { amplitude: 0.005, frequency: 0.5, wobble: 0.3 },
+  ghost: { amplitude: 0.005, frequency: 0.5, wobble: 0.35, driftYaw: 0.012 },
   expression: {},
   camera: DEFAULT_CAMERA,
   rotation: [0, 0, 0],
@@ -14,7 +14,7 @@ export function createDefaultConfig(): WidgetConfig {
   return {
     defaults: {
       camera: DEFAULT_CAMERA,
-      autoBlink: { interval: [2000, 7000], duration: 150 },
+      autoBlink: { interval: [3000, 6500], duration: 120 },
     },
     states: {
       idle: {

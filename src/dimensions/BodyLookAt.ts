@@ -3,7 +3,6 @@ import type { BoneInfo } from '../renderer/SparkSetup';
 
 const AXIS_Y = new THREE.Vector3(0, 1, 0);
 const AXIS_X = new THREE.Vector3(1, 0, 0);
-const AXIS_Z = new THREE.Vector3(0, 0, 1);
 
 /** Local rotation that yaws about +Y then pitches about +X (look toward cursor). */
 function yawPitch(yaw: number, pitch: number): THREE.Quaternion {
@@ -13,20 +12,15 @@ function yawPitch(yaw: number, pitch: number): THREE.Quaternion {
 }
 
 /**
- * Resting pose as LOCAL joint rotations. LHM bakes the body in the SMPL-X zero pose
- * (arms straight out, a T). FK rotates the shoulders down so the arms relax at the
- * sides — applied as a local rotation about the forward (Z) axis at each shoulder.
+ * Resting pose as LOCAL joint rotations. The backend now bakes the body into the
+ * *photographed* pose at export time (the SMPL-X body pose puts the arms at the
+ * sides) and ships the matching posed skeleton, so the rest pose is the IDENTITY —
+ * no shoulder-down rotation, and therefore no LBS stretch of the lower arms.
+ *
+ * Kept as an (empty) map so the look-at / IK code can still ask for a joint's resting
+ * rotation; every lookup falls back to identity (see Interpolator.restQuat).
  */
-export const REST_POSE: ReadonlyMap<string, THREE.Quaternion> = new Map([
-  // Rotate the (baked T-pose) arms down to the sides (~1.25 rad). The photo-mesh arms
-  // stretch under this rotation, so bodies are framed head-to-hips by default, which
-  // crops the stretched lower-arms; zoom out (editor radius) to pose, accepting the
-  // softness on extended limbs.
-  ['L_Shoulder', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -1.25)],
-  ['R_Shoulder', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, 1.25)],
-  ['L_Elbow', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -0.15)],
-  ['R_Elbow', new THREE.Quaternion().setFromAxisAngle(AXIS_Z, 0.15)],
-]);
+export const REST_POSE: ReadonlyMap<string, THREE.Quaternion> = new Map();
 
 export interface PosedBone {
   quat: THREE.Quaternion;

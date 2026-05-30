@@ -57,7 +57,7 @@ async function parseSplatPositions(url: string): Promise<Float32Array> {
  * Decode splat centers from Spark's PackedSplats buffer. Positions are stored as
  * half-floats: word i*4+1 holds halfX | halfY<<16, word i*4+2 holds halfZ in its
  * low 16 bits (matching ExpressionBasisApplier's writes). Used to recover baseline
- * positions when the source is SPZ (which the PLY text parser can't read).
+ * positions when the splat text parser can't read the source (SPZ, compressed PLY).
  */
 function decodePackedPositions(packed: Uint32Array): Float32Array {
   const numSplats = Math.floor(packed.length / 4);
@@ -78,6 +78,11 @@ async function parsePlyPositions(url: string): Promise<Float32Array> {
   const buffer = await res.arrayBuffer();
   const headerBytes = new Uint8Array(buffer, 0, Math.min(4096, buffer.byteLength));
   const header = new TextDecoder().decode(headerBytes);
+  // PlayCanvas compressed PLY (element chunk + packed_* uint props) isn't standard
+  // float32 x/y/z; bail so the caller recovers baselines from the packed buffer.
+  if (header.includes('packed_position') || header.includes('element chunk')) {
+    return new Float32Array(0);
+  }
   const endIdx = header.indexOf('end_header');
   const headerEnd = buffer.byteLength > endIdx ? header.indexOf('\n', endIdx) + 1 : 0;
 

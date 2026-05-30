@@ -6,11 +6,36 @@ import {
   lerpExpression,
   lerpGhost,
   lerpNumber,
+  lerpPose,
   lerpRotation,
   lerpState,
   lerpTracking,
 } from '../src/state/Interpolator';
 import type { StateDefinition } from '../src/types';
+
+describe('lerpPose', () => {
+  it('slerps per-joint quaternions and unions joints from both sides', () => {
+    const a = { L_Shoulder: [0, 0, 0, 1] as [number, number, number, number] };
+    const b = { L_Shoulder: [0, 0, 1, 0] as [number, number, number, number], R_Elbow: [0, 0, 0, 1] as [number, number, number, number] };
+    const mid = lerpPose(a, b, 0.5);
+    expect(Object.keys(mid).sort()).toEqual(['L_Shoulder', 'R_Elbow']);
+    // Halfway from identity to a 180° z-rotation is a 90° z-rotation: (0,0,√½,√½).
+    expect(mid.L_Shoulder[2]).toBeCloseTo(Math.SQRT1_2, 4);
+    expect(mid.L_Shoulder[3]).toBeCloseTo(Math.SQRT1_2, 4);
+  });
+
+  it('an unposed joint defaults to its resting rotation (identity — bodies are baked posed)', () => {
+    expect(lerpPose(undefined, undefined, 0.5)).toEqual({});
+    // No joint is in REST_POSE (the body is baked into its rest pose), so every
+    // joint's resting rotation IS identity.
+    expect(lerpPose(undefined, { L_Wrist: [0, 0, 1, 0] }, 0).L_Wrist[3]).toBeCloseTo(1, 4);
+    // Posing L_Shoulder, then lerping to a state that omits it, lands back at the
+    // resting (identity) rotation — the baked-in pose — not the authored rotation.
+    const out = lerpPose({ L_Shoulder: [0, 0, 1, 0] }, {}, 1);
+    expect(out.L_Shoulder[3]).toBeCloseTo(1, 4); // identity w
+    expect(out.L_Shoulder[2]).toBeCloseTo(0, 4); // identity z
+  });
+});
 
 describe('lerpNumber', () => {
   it('interpolates between two numbers', () => {
@@ -74,6 +99,21 @@ describe('lerpTracking', () => {
     const result = lerpTracking({ eyes: 1, head: 0 }, { eyes: 0, head: 1 }, 0.5);
     expect(result.eyes).toBeCloseTo(0.5);
     expect(result.head).toBeCloseTo(0.5);
+  });
+
+  it('interpolates body torso look-at intensity', () => {
+    const result = lerpTracking(
+      { head: 1, torso: 0 },
+      { head: 1, torso: 1 },
+      0.5,
+    );
+    expect(result.torso).toBeCloseTo(0.5);
+  });
+
+  it('treats missing fields as 0 (head states omit torso, body states omit eyes)', () => {
+    const result = lerpTracking({ head: 0 }, { head: 1 }, 0.5);
+    expect(result.torso).toBeCloseTo(0);
+    expect(result.eyes).toBeCloseTo(0);
   });
 });
 

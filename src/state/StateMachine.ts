@@ -52,6 +52,7 @@ export class StateMachine {
   }
 
   transitionTo(stateName: string): void {
+    if (this.frozen) return; // pose authoring freezes the machine on one state
     if (stateName === this.currentName && !this.targetName) return;
     if (stateName === this.targetName) return;
     if (!this.states[stateName]) return;

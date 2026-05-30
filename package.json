@@ -1,6 +1,6 @@
 {
   "name": "@afromero/splattie-widget",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Interactive 3D Gaussian Splatting web component - like Rive/Lottie for 3D",
   "type": "module",
   "main": "dist/splattie-widget.umd.cjs",

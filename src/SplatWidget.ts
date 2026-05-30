@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { SplatEdit, SplatEditSdf, SplatEditSdfType } from '@sparkjsdev/spark';
+import { BodyLookAt, REST_POSE, forwardKinematics } from './dimensions/BodyLookAt';
+import { IK_CHAINS, IK_POLES, clampQuatNear, solveTwoBoneIK } from './dimensions/BodyIK';
 import { CameraSphere } from './dimensions/CameraSphere';
 import { GhostEffect } from './dimensions/GhostEffect';
 import { ObjectRotation } from './dimensions/ObjectRotation';
@@ -11,7 +13,7 @@ import { HitDetector } from './interaction/HitDetector';
 import { createSparkInstance } from './renderer/SparkSetup';
 import type { BoneInfo, SparkInstance } from './renderer/SparkSetup';
 import { ExpressionBasisApplier, loadExpressionBasis } from './features/ExpressionBasis';
-import { createDefaultConfig, loadConfig } from './state/StateConfig';
+import { createDefaultConfig, loadConfig, type AssetType } from './state/StateConfig';
 import { StateMachine } from './state/StateMachine';
 import type { SplattieManifest, WidgetConfig } from './types';
 import { applyDeadzone, clampAbs } from './features/GazeMath';
@@ -25,6 +27,7 @@ export class SplatWidget extends HTMLElement {
   private ghost = new GhostEffect();
   private cameraSphere = new CameraSphere();
   private objectRotation = new ObjectRotation();
+  private bodyLookAt = new BodyLookAt();
   private autoBlink = new AutoBlink();
   private saccade = new Saccade();
   private gazeSaccade = { x: 0, y: 0 };
@@ -40,6 +43,109 @@ export class SplatWidget extends HTMLElement {
   private lastFrameMs = 0;
   private blinkEdit: { left: SplatEditSdf; right: SplatEditSdf; edit: SplatEdit } | null = null;
   private exprBasis: ExpressionBasisApplier | null = null;
+  private _assetType: AssetType = 'head';
+  /** Editor pose-authoring: freeze the look-at to neutral so IK handles match the body. */
+  poseAuthoring = false;
+
+  /** Asset type of the loaded bundle ('head' until a manifest says otherwise). */
+  get assetType(): AssetType {
+    return this._assetType;
+  }
+
+  // ── Body IK authoring API (consumed by the editor's drag handles) ──
+
+  /** Resting pose + the currently authored pose (no look-at) — the frame IK solves from. */
+  private bodyLocalRots(): Map<string, THREE.Quaternion> {
+    const localRots = new Map<string, THREE.Quaternion>(REST_POSE);
+    const pose = this._stateMachine?.currentFrame.pose ?? {};
+    for (const j of Object.keys(pose)) {
+      const q = pose[j];
+      localRots.set(j, new THREE.Quaternion(q[0], q[1], q[2], q[3]));
+    }
+    return localRots;
+  }
+
+  /** Project a world point to canvas pixel coordinates (null if behind the camera). */
+  projectToScreen(world: THREE.Vector3): [number, number] | null {
+    if (!this.spark) return null;
+    const ndc = world.clone().project(this.spark.camera);
+    if (ndc.z > 1) return null;
+    const rect = this.spark.canvas.getBoundingClientRect();
+    return [(ndc.x * 0.5 + 0.5) * rect.width, (-ndc.y * 0.5 + 0.5) * rect.height];
+  }
+
+  /** Unproject a canvas point onto the camera-facing plane through `through`. */
+  private unprojectToPlane(sx: number, sy: number, through: THREE.Vector3): THREE.Vector3 | null {
+    if (!this.spark) return null;
+    const rect = this.spark.canvas.getBoundingClientRect();
+    const cam = this.spark.camera;
+    const ndcX = (sx / rect.width) * 2 - 1;
+    const ndcY = -((sy / rect.height) * 2 - 1);
+    const origin = cam.position.clone();
+    const dir = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(cam).sub(origin).normalize();
+    const normal = new THREE.Vector3();
+    cam.getWorldDirection(normal);
+    const denom = dir.dot(normal);
+    if (Math.abs(denom) < 1e-6) return null;
+    const t = through.clone().sub(origin).dot(normal) / denom;
+    return origin.add(dir.multiplyScalar(t));
+  }
+
+  /** End-effector handle positions (canvas px) for each IK limb chain. */
+  bodyIKHandles(): { chain: string; sx: number; sy: number }[] {
+    if (this._assetType !== 'body' || !this.spark) return [];
+    const world = forwardKinematics(this.spark.bones, this.bodyLocalRots());
+    const idxByName = new Map(this.spark.bones.map((b) => [b.name, b.idx]));
+    const out: { chain: string; sx: number; sy: number }[] = [];
+    for (const [key, chain] of Object.entries(IK_CHAINS)) {
+      const idx = idxByName.get(chain.end);
+      const posed = idx !== undefined ? world.get(idx) : undefined;
+      const s = posed ? this.projectToScreen(posed.pos) : null;
+      if (s) out.push({ chain: key, sx: s[0], sy: s[1] });
+    }
+    return out;
+  }
+
+  /** Solve IK so `chainKey`'s end effector reaches a canvas point; returns the joint
+   * LOCAL quats (xyzw) to store in the state's pose, or null if not solvable. */
+  solveLimbToScreen(
+    chainKey: string,
+    sx: number,
+    sy: number,
+  ): { joint: string; quat: [number, number, number, number] }[] | null {
+    const chain = IK_CHAINS[chainKey];
+    if (this._assetType !== 'body' || !this.spark || !chain) return null;
+    const byName = new Map(this.spark.bones.map((b) => [b.name, b]));
+    const rootB = byName.get(chain.root);
+    const midB = byName.get(chain.mid);
+    const endB = byName.get(chain.end);
+    if (!rootB || !midB || !endB) return null;
+    const localRots = this.bodyLocalRots();
+    const world = forwardKinematics(this.spark.bones, localRots);
+    const wRoot = world.get(rootB.idx);
+    const wMid = world.get(midB.idx);
+    const wEnd = world.get(endB.idx);
+    if (!wRoot || !wMid || !wEnd) return null;
+    const target = this.unprojectToPlane(sx, sy, wEnd.pos);
+    if (!target) return null;
+    const p = IK_POLES[chainKey];
+    const pole = p ? new THREE.Vector3(p[0], p[1], p[2]) : null;
+    const sol = solveTwoBoneIK(
+      wRoot.pos, wMid.pos, wEnd.pos, target,
+      wRoot.quat, wMid.quat,
+      localRots.get(chain.root) ?? new THREE.Quaternion(),
+      localRots.get(chain.mid) ?? new THREE.Quaternion(),
+      pole,
+    );
+    // Bound each joint near its resting pose: a moderate cone for the root, a tight
+    // bend for the mid — past these the photo-mesh stretches into thin tendrils.
+    const root = clampQuatNear(sol.rootLocal, REST_POSE.get(chain.root) ?? new THREE.Quaternion(), 1.2);
+    const mid = clampQuatNear(sol.midLocal, REST_POSE.get(chain.mid) ?? new THREE.Quaternion(), 0.7);
+    return [
+      { joint: chain.root, quat: [root.x, root.y, root.z, root.w] },
+      { joint: chain.mid, quat: [mid.x, mid.y, mid.z, mid.w] },
+    ];
+  }
 
   static get observedAttributes(): string[] {
     return ['src', 'background', 'width', 'height'];
@@ -89,6 +195,8 @@ export class SplatWidget extends HTMLElement {
           throw new Error(`[splattie] not a splattie file: format="${manifest.format}"`);
         }
 
+        this._assetType = manifest.assetType ?? 'head';
+
         if (manifest.formatVersion !== __WIDGET_VERSION__) {
           throw new Error(
             `[splattie] format version mismatch: file=${manifest.formatVersion}, widget=${__WIDGET_VERSION__}. ` +
@@ -120,18 +228,23 @@ export class SplatWidget extends HTMLElement {
         if (configUrl) statesConfig = await fetch(configUrl).then(r => r.json());
       }
 
-      if (!basisBlobUrl) basisBlobUrl = this.getAttribute('expression-basis') ?? undefined;
+      // FLAME per-splat expression basis is head-only. Gate the attribute fallback
+      // on assetType so a body bundle (manifest basis: null) never picks up a
+      // hardcoded `expression-basis` attribute (e.g. editor.html sets one for all).
+      if (!basisBlobUrl && this._assetType === 'head') {
+        basisBlobUrl = this.getAttribute('expression-basis') ?? undefined;
+      }
 
       this.config = statesConfig
-        ? (await import('./state/StateConfig')).mergeWithDefaults(statesConfig)
-        : createDefaultConfig();
+        ? (await import('./state/StateConfig')).mergeWithDefaults(statesConfig, this._assetType)
+        : createDefaultConfig(this._assetType);
       this._stateMachine = new StateMachine(this.config);
       if (this.config.defaults.autoBlink) {
         this.autoBlink = new AutoBlink(this.config.defaults.autoBlink);
       }
       this.saccade = new Saccade(this.config.defaults.gaze.saccade);
 
-      this.spark = await createSparkInstance(this, splatUrl, bgColor, bonesUrl, weightsUrl);
+      this.spark = await createSparkInstance(this, splatUrl, bgColor, bonesUrl, weightsUrl, this._assetType);
       this.events.attachClick(this);
       this.addEventListener('splatclick', () => {
         if (!this.hasAttribute('editor-mode') && this._stateMachine) {
@@ -255,7 +368,11 @@ export class SplatWidget extends HTMLElement {
 
       // Dimension 2 + 5: Expressions + cursor tracking via SplatSkinning
       if (this.spark.skinning && this.spark.bones.length > 0) {
-        this.applySkinning(this.spark.skinning, this.spark.bones, frame);
+        if (this._assetType === 'body') {
+          this.applyBodySkinning(this.spark.skinning, this.spark.bones, frame);
+        } else {
+          this.applyHeadSkinning(this.spark.skinning, this.spark.bones, frame);
+        }
       }
 
       // Expression basis - per-splat position offsets from FLAME blendshapes
@@ -318,10 +435,14 @@ export class SplatWidget extends HTMLElement {
     this.objectRotation.apply(mesh, frame.rotation);
     this.cameraSphere.apply(camera, frame.camera);
 
-    // Cursor smoothing never runs, so applySkinning sees centered eyes + the
+    // Cursor smoothing never runs, so the skinning sees centered eyes + the
     // resting expression — a neutral, still pose.
     if (this.spark.skinning && this.spark.bones.length > 0) {
-      this.applySkinning(this.spark.skinning, this.spark.bones, frame);
+      if (this._assetType === 'body') {
+        this.applyBodySkinning(this.spark.skinning, this.spark.bones, frame);
+      } else {
+        this.applyHeadSkinning(this.spark.skinning, this.spark.bones, frame);
+      }
     }
     if (this.exprBasis && this.spark.packedArray && this.spark.packedSplatsRef) {
       const updated = this.exprBasis.apply(this.spark.packedArray, frame.expression);
@@ -331,7 +452,40 @@ export class SplatWidget extends HTMLElement {
     renderer.render(scene, camera);
   }
 
-  private applySkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {
+  // Body skinning (SMPL-X) via forward kinematics: a resting pose (arms down from
+  // LHM's baked T-pose) plus head + torso look-at toward the cursor, composed as
+  // local joint rotations. FK turns those into per-bone world transforms, so the
+  // head turns as a whole (jaw/eyes inherit it) and the arms rotate rigidly.
+  private applyBodySkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {
+    const sk = skinning as {
+      setBoneQuatPos: (idx: number, q: THREE.Quaternion, p: THREE.Vector3) => void;
+      updateBones: () => void;
+    };
+    const tracking = frame.tracking;
+    const localRots = new Map<string, THREE.Quaternion>(REST_POSE);
+    // Per-state authored pose (IK-solved limb rotations) replaces the resting pose
+    // for those joints; the look-at then drives the spine/neck/head on top.
+    const pose = frame.pose ?? {};
+    for (const joint of Object.keys(pose)) {
+      const q = pose[joint];
+      localRots.set(joint, new THREE.Quaternion(q[0], q[1], q[2], q[3]));
+    }
+    if (!this.poseAuthoring) {
+      const look = this.bodyLookAt.localRotations(this.cursor.ndcX, this.cursor.ndcY, tracking.head ?? 0, tracking.torso ?? 0);
+      for (const [joint, quat] of look) localRots.set(joint, quat);
+    }
+
+    // Spark needs every bone's current transform each frame (unset joints blank the
+    // render once any joint moves); FK provides all 55.
+    const world = forwardKinematics(bones, localRots);
+    for (const bone of bones) {
+      const posed = world.get(bone.idx);
+      if (posed) sk.setBoneQuatPos(bone.idx, posed.quat, posed.pos);
+    }
+    sk.updateBones();
+  }
+
+  private applyHeadSkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {
     const sk = skinning as {
       setBoneQuatPos: (idx: number, q: THREE.Quaternion, p: THREE.Vector3) => void;
       updateBones: () => void;
@@ -374,9 +528,9 @@ export class SplatWidget extends HTMLElement {
     const gazeX = frame.expression.gazeX ?? 0;
     const gazeY = frame.expression.gazeY ?? 0;
     const eyeYaw =
-      clampAbs((gazeNdcX + this.gazeSaccade.x) * g.maxEyeYaw * g.intensity * tracking.eyes, g.maxEyeYaw) + gazeX;
+      clampAbs((gazeNdcX + this.gazeSaccade.x) * g.maxEyeYaw * g.intensity * (tracking.eyes ?? 0), g.maxEyeYaw) + gazeX;
     const eyePitch =
-      clampAbs((gazeNdcY + this.gazeSaccade.y) * g.maxEyePitch * g.intensity * tracking.eyes, g.maxEyePitch) + gazeY;
+      clampAbs((gazeNdcY + this.gazeSaccade.y) * g.maxEyePitch * g.intensity * (tracking.eyes ?? 0), g.maxEyePitch) + gazeY;
     for (const eye of [leftEye, rightEye]) {
       if (!eye) continue;
       const localQ = new THREE.Quaternion();

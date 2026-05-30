@@ -1,4 +1,17 @@
+import * as THREE from 'three';
+import { REST_POSE } from '../dimensions/BodyLookAt';
 import type { CameraConfig, GhostConfig, StateDefinition, TrackingConfig, TransitionConfig } from '../types';
+
+type Quat = [number, number, number, number];
+const IDENTITY_QUAT: Quat = [0, 0, 0, 1];
+
+/** A joint absent from a state's pose sits at its RESTING rotation — the identity for
+ * every joint, since the body is baked into its photographed pose at export (the rest
+ * pose is no longer a T-pose needing correction). See BodyLookAt.REST_POSE. */
+function restQuat(joint: string): Quat {
+  const q = REST_POSE.get(joint);
+  return q ? [q.x, q.y, q.z, q.w] : IDENTITY_QUAT;
+}
 
 type EasingFn = (t: number) => number;
 
@@ -33,7 +46,7 @@ export function lerpExpression(
   b: Record<string, number>,
   t: number,
 ): Record<string, number> {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const keys = new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})]);
   const result: Record<string, number> = {};
   for (const k of keys) {
     result[k] = lerpNumber(a[k] ?? 0, b[k] ?? 0, t);
@@ -59,11 +72,30 @@ export function lerpRotation(
   return [lerpNumber(a[0], b[0], t), lerpNumber(a[1], b[1], t), lerpNumber(a[2], b[2], t)];
 }
 
+export function lerpPose(
+  a: Record<string, Quat> | undefined,
+  b: Record<string, Quat> | undefined,
+  t: number,
+): Record<string, Quat> {
+  const aa = a ?? {};
+  const bb = b ?? {};
+  const keys = new Set([...Object.keys(aa), ...Object.keys(bb)]);
+  const result: Record<string, Quat> = {};
+  for (const k of keys) {
+    // A joint present on only one side slerps from/to its RESTING rotation (identity);
+    // the baked-in photographed pose is what an unposed state shows.
+    const q = new THREE.Quaternion(...(aa[k] ?? restQuat(k)));
+    q.slerp(new THREE.Quaternion(...(bb[k] ?? restQuat(k))), t);
+    result[k] = [q.x, q.y, q.z, q.w];
+  }
+  return result;
+}
+
 export function lerpTracking(a: TrackingConfig, b: TrackingConfig, t: number): TrackingConfig {
   return {
-    eyes: lerpNumber(a.eyes, b.eyes, t),
+    eyes: lerpNumber(a.eyes ?? 0, b.eyes ?? 0, t),
     head: lerpNumber(a.head, b.head, t),
-    body: lerpNumber(a.body ?? 0, b.body ?? 0, t),
+    torso: lerpNumber(a.torso ?? 0, b.torso ?? 0, t),
   };
 }
 
@@ -78,6 +110,7 @@ export function lerpState(
     camera: lerpCamera(from.camera, to.camera, t),
     rotation: lerpRotation(from.rotation, to.rotation, t),
     tracking: lerpTracking(from.tracking, to.tracking, t),
+    pose: lerpPose(from.pose, to.pose, t),
   };
 }
 

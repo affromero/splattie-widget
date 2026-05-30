@@ -8,9 +8,12 @@ export interface GhostConfig {
 }
 
 export interface TrackingConfig {
-  eyes: number;
+  /** Head-only: how strongly the eyes track the cursor. */
+  eyes?: number;
+  /** How strongly the head turns toward the cursor (head + body look-at). */
   head: number;
-  body?: number;
+  /** Body-only: how much the torso (spine) leans toward the cursor (look-at). */
+  torso?: number;
 }
 
 export interface CameraConfig {
@@ -27,6 +30,9 @@ export interface StateDefinition {
   camera: CameraConfig;
   rotation: [number, number, number];
   tracking: TrackingConfig;
+  /** Body-only: per-joint LOCAL rotation overrides (quaternion xyzw), authored via
+   * IK in the editor and composed on top of the resting pose by the widget's FK. */
+  pose?: Record<string, [number, number, number, number]>;
 }
 
 export interface TransitionConfig {
@@ -78,6 +84,7 @@ export interface WidgetConfig {
 export interface SplattieManifest {
   format: 'splattie';
   formatVersion: string;
+  assetType: 'head' | 'body' | 'object';
   generator: {
     method: string;
     methodVersion?: string;

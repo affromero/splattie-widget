@@ -11,7 +11,63 @@ const DEFAULT_STATE: StateDefinition = {
   tracking: { eyes: 1.0, head: 0.0 },
 };
 
-export function createDefaultConfig(): WidgetConfig {
+export type AssetType = 'head' | 'body' | 'object';
+
+const BODY_CAMERA: CameraConfig = { theta: 0, phi: 90, radius: 2.4, lookAt: 'auto', fov: 45 };
+
+/** Body default config: head/torso look-at tracking, no FLAME expressions, framed
+ * for a standing figure. Mirrors bundle.py's DEFAULT_STATES_BODY so a body bundle's
+ * states.json (and the editor) resolve consistent defaults. */
+function createBodyConfig(): WidgetConfig {
+  return {
+    defaults: {
+      camera: BODY_CAMERA,
+      // Bodies use head/torso look-at (BodyLookAt), not the eye-gaze system, but the
+      // config type requires a gaze block; these defaults are inert for bodies.
+      gaze: {
+        intensity: 1.0,
+        smoothingTau: 0.18,
+        deadzone: 0.06,
+        maxEyeYaw: 0.09,
+        maxEyePitch: 0.04,
+        maxNeckYaw: 0.08,
+        maxNeckPitch: 0.05,
+        saccade: { ...DEFAULT_SACCADE_CONFIG, intervalMs: [...DEFAULT_SACCADE_CONFIG.intervalMs] },
+      },
+    },
+    states: {
+      idle: {
+        ghost: { amplitude: 0.004, frequency: 0.3, wobble: 0.2 },
+        expression: {},
+        camera: BODY_CAMERA,
+        rotation: [0, 0, 0],
+        tracking: { head: 1.0, torso: 0.3 },
+      },
+      hover: {
+        ghost: { amplitude: 0.006, frequency: 0.5, wobble: 0.3 },
+        expression: {},
+        camera: { theta: 0, phi: 90, radius: 2.2, fov: 45 },
+        rotation: [0, 0, 0],
+        tracking: { head: 1.0, torso: 0.5 },
+      },
+      click: {
+        ghost: { amplitude: 0.002, frequency: 0.8, wobble: 0.1 },
+        expression: {},
+        camera: { theta: 0, phi: 88, radius: 2.0, fov: 48 },
+        rotation: [0, 0, 0],
+        tracking: { head: 0.6, torso: 0.2 },
+      },
+    },
+    transitions: {
+      'idle->hover': { duration: 0.3, easing: 'ease-out' },
+      'hover->idle': { duration: 0.5, easing: 'ease-in' },
+      '*->click': { duration: 0.1, easing: 'snap' },
+    },
+  };
+}
+
+export function createDefaultConfig(assetType: AssetType = 'head'): WidgetConfig {
+  if (assetType === 'body') return createBodyConfig();
   return {
     defaults: {
       camera: DEFAULT_CAMERA,
@@ -55,8 +111,8 @@ export function createDefaultConfig(): WidgetConfig {
   };
 }
 
-export function mergeWithDefaults(partial: Partial<WidgetConfig>): WidgetConfig {
-  const defaults = createDefaultConfig();
+export function mergeWithDefaults(partial: Partial<WidgetConfig>, assetType: AssetType = 'head'): WidgetConfig {
+  const defaults = createDefaultConfig(assetType);
   return {
     defaults: {
       ...defaults.defaults,

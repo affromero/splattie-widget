@@ -24,7 +24,7 @@
   <img src="demo.gif" alt="Splattie Widget Demo" width="600" />
 </p>
 
-A web component that makes gaussian splats **reactive**. One file, one tag. Eyes follow the cursor, face blinks and reacts to hover/click, expressions transition smoothly. 60fps, client-side.
+A web component that makes gaussian splats **reactive**. One file, one tag. **Heads** track the cursor with their eyes, blink, and emote on hover/click (FLAME rig); **bodies** turn their head and torso toward visitors and pose with two-bone arm IK (SMPL-X rig). 60fps, client-side. The widget branches on the bundle's `assetType` — same tag either way.
 
 **[See it live at afromero.co](https://afromero.co)** | **[Create your own at splattie.app](https://splattie.app)**
 
@@ -55,11 +55,18 @@ and locks the file's `formatVersion` to the widget version. See
 
 ```
 avatar.splattie
-├── manifest.json             # (required) declares every asset + formatVersion
+├── manifest.json             # (required) declares every asset + assetType + formatVersion
 ├── *.ply or *.spz            # (required) Gaussian splats
-├── bone_tree.json            # (optional) Skeleton for skinning
+│
+│  # head (assetType: head) — FLAME rig:
+├── bone_tree.json            # (optional) Skeleton for skinning (5 FLAME bones)
 ├── lbs_weight_20k.json       # (optional) Per-splat bone weights
 ├── expression_basis.bin      # (optional) Blendshape basis
+│
+│  # body (assetType: body) — SMPL-X rig:
+├── skeleton.json             # (optional) 55-joint SMPL-X skeleton (baked-pose rest)
+├── lbs_weights.json          # (optional) Per-gaussian sparse LBS weights
+│
 └── states.json               # (optional) Interaction states
 ```
 
@@ -126,6 +133,27 @@ Experimental format, may add compression. Without it: bone-driven expressions st
 </details>
 
 <details>
+<summary><strong>skeleton.json</strong> + <strong>lbs_weights.json</strong> - SMPL-X body rig (bodies)</summary>
+
+Bodies (`assetType: body`) use a 55-joint SMPL-X skeleton instead of FLAME bones:
+
+```json
+// skeleton.json — joints in the BAKED (photographed) rest pose
+{ "rig": "smplx", "jointCount": 55, "names": ["Pelvis", "L_Hip", ...],
+  "parents": [-1, 0, 0, ...], "restPositions": [[x, y, z], ...] }
+
+// lbs_weights.json — sparse top-K per-gaussian skinning
+{ "numGaussians": 40000, "k": 4, "indices": [...], "weights": [...] }
+```
+
+The body is exported already posed (arms at rest), so the widget's rest pose is the
+identity. From there it drives **head + torso look-at** toward the cursor and a
+**two-bone arm IK** for editor posing, composing local joint rotations via SMPL-X
+forward kinematics + linear blend skinning. Without these: the gaussians render but
+don't articulate.
+</details>
+
+<details>
 <summary><strong>states.json</strong> - interaction state definitions</summary>
 
 Each state (idle, hover, click) sets all 5 dimensions simultaneously.
@@ -173,7 +201,7 @@ Most likely to evolve. Without it: sensible defaults (eyes track, gentle float, 
 | **Expression** | FLAME blendshapes + bones | Smile on hover, surprise on click |
 | **Camera** | Spherical position | Zoom in on hover |
 | **Rotation** | Pitch/yaw/roll | Tilt head on hover |
-| **Tracking** | Cursor-follow intensity | Eyes on idle, head follows on hover |
+| **Tracking** | Cursor-follow intensity | Heads: eyes/head. Bodies: head/torso turn toward the cursor |
 
 Interpolated between states with configurable easing and duration.
 
@@ -216,7 +244,7 @@ widget.setState('hover');                           // force transition
 npm run dev  # http://localhost:4002
 ```
 
-Sliders for all 5 dimensions, camera sphere widget, state tabs with copy-forward, FLAME blendshape controls, drag-and-drop `.splattie` upload, export when done.
+Sliders for all 5 dimensions, camera sphere widget, state tabs with copy-forward, FLAME blendshape controls (heads), on-canvas IK drag handles to pose limbs (bodies), drag-and-drop `.splattie` upload, export when done.
 
 ## How It Works
 
@@ -226,11 +254,12 @@ Built on [Spark 2.0](https://github.com/sparkjsdev/spark) (MIT, World Labs).
 <summary><strong>Architecture</strong></summary>
 
 1. **State machine** with per-dimension interpolation (lerp, slerp, ease curves)
-2. **SplatSkinning** (dual quaternion) driving 5 FLAME bones from expression + cursor data
-3. **Expression basis** - per-splat position offsets written to Spark's packed buffer (half-float, ~20K splats/frame)
-4. **Hit detection** via `readPixels` after render (pixel-perfect)
-5. **Auto-blink** with randomized interval and sine-curve via SplatEdit
-6. **Gyroscope** tracking on mobile (iOS permission prompt included)
+2. **SplatSkinning** (dual quaternion) driving 5 FLAME bones from expression + cursor data (heads)
+3. **SMPL-X skinning** (55-joint LBS) for bodies — head/torso look-at + analytic two-bone arm IK, composed via forward kinematics
+4. **Expression basis** - per-splat position offsets written to Spark's packed buffer (half-float, ~20K splats/frame)
+5. **Hit detection** via `readPixels` after render (pixel-perfect)
+6. **Auto-blink** with randomized interval and sine-curve via SplatEdit
+7. **Gyroscope** tracking on mobile (iOS permission prompt included)
 </details>
 
 ## Mobile
@@ -243,8 +272,10 @@ Chrome, Firefox, Safari, Edge. WebGL 2 required. No COOP/COEP headers needed.
 
 ## Acknowledgements
 
-- [LAM](https://github.com/aigc3d/LAM) (SIGGRAPH 2025) - Zixuan Zeng et al., AIGC3D team
-- [FLAME](https://flame.is.tue.mpg.de/) - Tianye Li, Timo Bolkart, Michael J. Black, Hao Li, Javier Romero
+- [LAM](https://github.com/aigc3d/LAM) (SIGGRAPH 2025) - single-image 3DGS heads. Zixuan Zeng et al., AIGC3D team
+- [LHM](https://github.com/aigc3d/LHM) (SIGGRAPH 2025) - single-image 3DGS bodies. AIGC3D team
+- [FLAME](https://flame.is.tue.mpg.de/) - face model (heads). Tianye Li, Timo Bolkart, Michael J. Black, Hao Li, Javier Romero
+- [SMPL-X](https://smpl-x.is.tue.mpg.de/) - body model (bodies). Pavlakos, Choutas, Ghorbani, Bolkart, Osman, Tzionas, Black (MPI)
 - [Spark 2.0](https://github.com/sparkjsdev/spark) - World Labs (MIT)
 - [3D Gaussian Splatting](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/) - Kerbl, Kopanas, Leimkuhler, Drettakis (INRIA)
 

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="logo.svg" alt="Splattie" width="100" />
+<img src="assets/logo.svg" alt="Splattie" width="100" />
 
 # splattie-widget
 
@@ -11,7 +11,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![Spark](https://img.shields.io/badge/Spark_2.0-MIT-green)](https://github.com/sparkjsdev/spark)
 [![Three.js](https://img.shields.io/badge/Three.js-r170+-black?logo=three.js)](https://threejs.org)
-[![Tests](https://img.shields.io/badge/tests-25_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-63_passing-brightgreen)]()
 [![Bundle](https://img.shields.io/badge/format-.splattie-orange)]()
 
 [Quick Start](#quick-start) · [Format Spec](FORMAT.md) · [API](#api) · [Editor](#visual-editor) · [How It Works](#how-it-works)
@@ -21,7 +21,7 @@
 ---
 
 <p align="center">
-  <img src="demo.gif" alt="Splattie Widget Demo" width="600" />
+  <img src="assets/demo.gif" alt="Splattie Widget Demo" width="600" />
 </p>
 
 A web component that makes gaussian splats **reactive**. One file, one tag. **Heads** track the cursor with their eyes, blink, and emote on hover/click (FLAME rig); **bodies** turn their head and torso toward visitors and pose with two-bone arm IK (SMPL-X rig). 60fps, client-side. The widget branches on the bundle's `assetType` — same tag either way.

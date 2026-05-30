@@ -15,11 +15,12 @@ export const IK_CHAINS: Record<string, IKChain> = {
   R_leg: { root: 'R_Hip', mid: 'R_Knee', end: 'R_Ankle' },
 };
 
-/** Bend-plane pole per limb (world dir the mid joint juts toward): elbows back,
- * knees forward. The body faces +Z (toward the camera). */
+/** Bend-plane pole per limb (world dir the mid joint juts toward): elbows hang
+ * down (so a raised arm stays in front, not swung behind), knees forward. The body
+ * faces +Z (toward the camera). */
 export const IK_POLES: Record<string, [number, number, number]> = {
-  L_arm: [0, 0, -1],
-  R_arm: [0, 0, -1],
+  L_arm: [0, -1, 0],
+  R_arm: [0, -1, 0],
   L_leg: [0, 0, 1],
   R_leg: [0, 0, 1],
 };

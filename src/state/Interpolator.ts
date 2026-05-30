@@ -24,6 +24,7 @@ export function lerpGhost(a: GhostConfig, b: GhostConfig, t: number): GhostConfi
     frequency: lerpNumber(a.frequency, b.frequency, t),
     wobble: lerpNumber(a.wobble, b.wobble, t),
     phase: lerpNumber(a.phase ?? 0, b.phase ?? 0, t),
+    driftYaw: lerpNumber(a.driftYaw ?? 0, b.driftYaw ?? 0, t),
   };
 }
 

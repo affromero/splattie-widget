@@ -1,6 +1,11 @@
+import { expSmooth } from '../features/GazeMath';
+
 export class CursorTracker {
   ndcX = 0;
   ndcY = 0;
+  /** Damped cursor position, eased toward ndcX/ndcY each frame via update(). */
+  smoothX = 0;
+  smoothY = 0;
   clientX = 0;
   clientY = 0;
   isOnPage = false;
@@ -28,6 +33,17 @@ export class CursorTracker {
     document.removeEventListener('pointercancel', this.onPointerUp);
     window.removeEventListener('deviceorientation', this.onGyro);
     this.element = null;
+  }
+
+  /**
+   * Advance the damped cursor toward the raw target. Call once per frame with
+   * the real delta-time and smoothing time-constant. On pointer-leave the
+   * target is zeroed, so the smoothed value eases back to center instead of
+   * snapping.
+   */
+  update(dt: number, tau: number): void {
+    this.smoothX = expSmooth(this.smoothX, this.ndcX, dt, tau);
+    this.smoothY = expSmooth(this.smoothY, this.ndcY, dt, tau);
   }
 
   private onMove = (e: PointerEvent): void => {

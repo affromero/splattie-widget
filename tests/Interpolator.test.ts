@@ -29,6 +29,13 @@ describe('lerpGhost', () => {
     expect(result.frequency).toBeCloseTo(1);
     expect(result.wobble).toBeCloseTo(0.25);
   });
+
+  it('interpolates driftYaw, treating an unset side as 0', () => {
+    const a = { amplitude: 0, frequency: 0, wobble: 0, driftYaw: 0.02 };
+    const b = { amplitude: 0, frequency: 0, wobble: 0 };
+    expect(lerpGhost(a, b, 0.5).driftYaw).toBeCloseTo(0.01);
+    expect(lerpGhost(b, b, 0.5).driftYaw).toBe(0);
+  });
 });
 
 describe('lerpExpression', () => {

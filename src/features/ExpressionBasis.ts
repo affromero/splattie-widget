@@ -4,19 +4,7 @@
  * directly to Spark's PackedSplats buffer (half-float encoding).
  */
 
-const _f32 = new Float32Array(1);
-const _i32 = new Int32Array(_f32.buffer);
-
-function toHalf(f: number): number {
-  _f32[0] = f;
-  const i = _i32[0];
-  const s = (i >>> 16) & 0x8000;
-  const e = ((i >>> 23) & 0xff) - 112;
-  const m = i & 0x7fffff;
-  if (e <= 0) return s;
-  if (e > 30) return s | 0x7c00;
-  return s | (e << 10) | (m >>> 13);
-}
+import { toHalf, halfToFloat } from './half';
 
 export interface ExprBasisData {
   numVertices: number;
@@ -32,11 +20,14 @@ export async function loadExpressionBasis(url: string): Promise<ExprBasisData> {
   const magic = String.fromCharCode(
     header.getUint8(0), header.getUint8(1), header.getUint8(2), header.getUint8(3),
   );
-  if (magic !== 'EXPR') throw new Error(`Invalid expression basis magic: ${magic}`);
+  if (magic !== 'EXPH') throw new Error(`Invalid expression basis magic: ${magic} (expected EXPH float16)`);
 
   const numVertices = header.getUint32(4, true);
   const numExpressions = header.getUint32(8, true);
-  const basis = new Float32Array(buf, 12);
+  // Stored as IEEE half-floats; decode to float32 once at load.
+  const halves = new Uint16Array(buf, 12);
+  const basis = new Float32Array(halves.length);
+  for (let i = 0; i < halves.length; i++) basis[i] = halfToFloat(halves[i]);
 
   let labels = Array.from({ length: numExpressions }, (_, i) => `expr_${i}`);
   try {

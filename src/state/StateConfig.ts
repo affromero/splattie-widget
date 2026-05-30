@@ -1,9 +1,10 @@
 import type { CameraConfig, StateDefinition, WidgetConfig } from '../types';
+import { DEFAULT_SACCADE_CONFIG } from '../features/Saccade';
 
 const DEFAULT_CAMERA: CameraConfig = { theta: 0, phi: 75, radius: 2.5, lookAt: 'auto', fov: 50 };
 
 const DEFAULT_STATE: StateDefinition = {
-  ghost: { amplitude: 0.005, frequency: 0.5, wobble: 0.3 },
+  ghost: { amplitude: 0.005, frequency: 0.5, wobble: 0.35, driftYaw: 0.012 },
   expression: {},
   camera: DEFAULT_CAMERA,
   rotation: [0, 0, 0],
@@ -14,7 +15,17 @@ export function createDefaultConfig(): WidgetConfig {
   return {
     defaults: {
       camera: DEFAULT_CAMERA,
-      autoBlink: { interval: [2000, 7000], duration: 150 },
+      autoBlink: { interval: [3000, 6500], duration: 120 },
+      gaze: {
+        intensity: 1.0,
+        smoothingTau: 0.18,
+        deadzone: 0.06,
+        maxEyeYaw: 0.09,
+        maxEyePitch: 0.04,
+        maxNeckYaw: 0.08,
+        maxNeckPitch: 0.05,
+        saccade: { ...DEFAULT_SACCADE_CONFIG, intervalMs: [...DEFAULT_SACCADE_CONFIG.intervalMs] },
+      },
     },
     states: {
       idle: {
@@ -47,7 +58,20 @@ export function createDefaultConfig(): WidgetConfig {
 export function mergeWithDefaults(partial: Partial<WidgetConfig>): WidgetConfig {
   const defaults = createDefaultConfig();
   return {
-    defaults: { ...defaults.defaults, ...partial.defaults },
+    defaults: {
+      ...defaults.defaults,
+      ...partial.defaults,
+      // Deep-merge the nested gaze block so a partial config that sets `defaults`
+      // doesn't wipe the gaze (and saccade) defaults.
+      gaze: {
+        ...defaults.defaults.gaze,
+        ...partial.defaults?.gaze,
+        saccade: {
+          ...defaults.defaults.gaze.saccade,
+          ...partial.defaults?.gaze?.saccade,
+        },
+      },
+    },
     states: { ...defaults.states, ...partial.states },
     transitions: { ...defaults.transitions, ...partial.transitions },
   };

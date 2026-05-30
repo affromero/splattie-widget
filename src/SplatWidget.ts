@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { SplatEdit, SplatEditSdf, SplatEditSdfType } from '@sparkjsdev/spark';
 import { CameraSphere } from './dimensions/CameraSphere';
-import { CursorTracking } from './dimensions/CursorTracking';
 import { GhostEffect } from './dimensions/GhostEffect';
 import { ObjectRotation } from './dimensions/ObjectRotation';
 import { AutoBlink } from './features/AutoBlink';
+import { Saccade } from './features/Saccade';
 import { CursorTracker } from './interaction/CursorTracker';
 import { SplatEvents } from './interaction/Events';
 import { HitDetector } from './interaction/HitDetector';
@@ -14,6 +14,9 @@ import { ExpressionBasisApplier, loadExpressionBasis } from './features/Expressi
 import { createDefaultConfig, loadConfig } from './state/StateConfig';
 import { StateMachine } from './state/StateMachine';
 import type { SplattieManifest, WidgetConfig } from './types';
+import { applyDeadzone, clampAbs } from './features/GazeMath';
+
+const SACCADE_SUPPRESS_VEL = 0.6; // smoothed-cursor speed (NDC/s) at which saccades fully suppress
 
 export class SplatWidget extends HTMLElement {
   private spark: SparkInstance | null = null;
@@ -22,8 +25,11 @@ export class SplatWidget extends HTMLElement {
   private ghost = new GhostEffect();
   private cameraSphere = new CameraSphere();
   private objectRotation = new ObjectRotation();
-  private cursorTracking = new CursorTracking();
   private autoBlink = new AutoBlink();
+  private saccade = new Saccade();
+  private gazeSaccade = { x: 0, y: 0 };
+  private prevSmoothX = 0;
+  private prevSmoothY = 0;
   private cursor = new CursorTracker();
   private hitDetector = new HitDetector();
   private events: SplatEvents | null = null;
@@ -31,6 +37,7 @@ export class SplatWidget extends HTMLElement {
   private config: WidgetConfig | null = null;
   private frameCount = 0;
   private clickHoldTimer = 0;
+  private lastFrameMs = 0;
   private blinkEdit: { left: SplatEditSdf; right: SplatEditSdf; edit: SplatEdit } | null = null;
   private exprBasis: ExpressionBasisApplier | null = null;
 
@@ -122,6 +129,7 @@ export class SplatWidget extends HTMLElement {
       if (this.config.defaults.autoBlink) {
         this.autoBlink = new AutoBlink(this.config.defaults.autoBlink);
       }
+      this.saccade = new Saccade(this.config.defaults.gaze.saccade);
 
       this.spark = await createSparkInstance(this, splatUrl, bgColor, bonesUrl, weightsUrl);
       this.events.attachClick(this);
@@ -203,13 +211,33 @@ export class SplatWidget extends HTMLElement {
   private startRenderLoop(): void {
     const { renderer, scene, camera } = this.spark!;
 
-    renderer.setAnimationLoop(() => {
+    // Respect prefers-reduced-motion: render the resting pose once and stop, so
+    // there's no idle float, blink, saccade, or cursor tracking.
+    if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.renderStaticFrame();
+      return;
+    }
+
+    renderer.setAnimationLoop((timeMs: number) => {
       this.frameCount++;
       if (!this.stateMachine || !this.spark) return;
 
-      const deltaTime = 1 / 60;
-      const now = performance.now() / 1000;
+      const now = timeMs / 1000;
+      let deltaTime = this.lastFrameMs ? (timeMs - this.lastFrameMs) / 1000 : 1 / 60;
+      deltaTime = Math.min(deltaTime, 0.1); // clamp big gaps (e.g. after tab-away)
+      this.lastFrameMs = timeMs;
       this.stateMachine.update(deltaTime);
+      this.cursor.update(deltaTime, this.config!.defaults.gaze.smoothingTau);
+
+      // Saccades: suppressed while the cursor is actively moving (smooth pursuit).
+      const cursorVel = Math.hypot(
+        this.cursor.smoothX - this.prevSmoothX,
+        this.cursor.smoothY - this.prevSmoothY,
+      ) / Math.max(deltaTime, 1e-3);
+      this.prevSmoothX = this.cursor.smoothX;
+      this.prevSmoothY = this.cursor.smoothY;
+      this.gazeSaccade = this.saccade.update(deltaTime, Math.min(1, cursorVel / SACCADE_SUPPRESS_VEL));
+
       const frame = this.stateMachine.currentFrame;
 
       const mesh = this.spark.splatMesh as unknown as THREE.Object3D;
@@ -279,6 +307,30 @@ export class SplatWidget extends HTMLElement {
     });
   }
 
+  private renderStaticFrame(): void {
+    if (!this.spark || !this.stateMachine) return;
+    const { renderer, scene, camera } = this.spark;
+    const frame = this.stateMachine.currentFrame;
+    const mesh = this.spark.splatMesh as unknown as THREE.Object3D;
+
+    mesh.position.set(0, 0, 0);
+    mesh.rotation.set(0, 0, 0);
+    this.objectRotation.apply(mesh, frame.rotation);
+    this.cameraSphere.apply(camera, frame.camera);
+
+    // Cursor smoothing never runs, so applySkinning sees centered eyes + the
+    // resting expression — a neutral, still pose.
+    if (this.spark.skinning && this.spark.bones.length > 0) {
+      this.applySkinning(this.spark.skinning, this.spark.bones, frame);
+    }
+    if (this.exprBasis && this.spark.packedArray && this.spark.packedSplatsRef) {
+      const updated = this.exprBasis.apply(this.spark.packedArray, frame.expression);
+      if (updated) this.spark.packedSplatsRef.needsUpdate = true;
+    }
+
+    renderer.render(scene, camera);
+  }
+
   private applySkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {
     const sk = skinning as {
       setBoneQuatPos: (idx: number, q: THREE.Quaternion, p: THREE.Vector3) => void;
@@ -292,13 +344,24 @@ export class SplatWidget extends HTMLElement {
     const rightEye = byName.get('rightEye');
 
     const tracking = frame.tracking;
+    const g = this.config!.defaults.gaze;
 
-    // Neck - computed first so children inherit its rotation
+    // Damped + deadzoned cursor gaze (clamped to NDC range). Shared by neck + eyes
+    // so tiny jitter near center is ignored and the eyes ease in instead of snapping.
+    const [gazeNdcX, gazeNdcY] = applyDeadzone(
+      clampAbs(this.cursor.smoothX, 1),
+      clampAbs(this.cursor.smoothY, 1),
+      g.deadzone,
+    );
+
+    // Neck - computed first so children inherit its rotation. Neck deliberately
+    // ignores `intensity`: a calm head with lively eyes is what keeps strong
+    // eye-follow from reading robotic.
     const exprNeckPitch = frame.expression.neckTilt ?? 0;
     const exprNeckYaw = frame.expression.neckYaw ?? 0;
     const exprNeckRoll = frame.expression.neckRoll ?? 0;
-    const neckYaw = this.cursor.ndcX * 0.08 * tracking.head + exprNeckYaw;
-    const neckPitch = this.cursor.ndcY * 0.05 * tracking.head + exprNeckPitch;
+    const neckYaw = clampAbs(gazeNdcX * g.maxNeckYaw * tracking.head, g.maxNeckYaw) + exprNeckYaw;
+    const neckPitch = clampAbs(gazeNdcY * g.maxNeckPitch * tracking.head, g.maxNeckPitch) + exprNeckPitch;
     const neckQ = new THREE.Quaternion();
     if (neck) {
       neckQ.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), exprNeckRoll));
@@ -310,10 +373,10 @@ export class SplatWidget extends HTMLElement {
     // Eyes - cursor tracking + gaze offset, inherits neck rotation
     const gazeX = frame.expression.gazeX ?? 0;
     const gazeY = frame.expression.gazeY ?? 0;
-    const clampedX = Math.max(-1, Math.min(1, this.cursor.ndcX));
-    const clampedY = Math.max(-1, Math.min(1, this.cursor.ndcY));
-    const eyeYaw = clampedX * 0.09 * tracking.eyes + gazeX;
-    const eyePitch = clampedY * 0.04 * tracking.eyes + gazeY;
+    const eyeYaw =
+      clampAbs((gazeNdcX + this.gazeSaccade.x) * g.maxEyeYaw * g.intensity * tracking.eyes, g.maxEyeYaw) + gazeX;
+    const eyePitch =
+      clampAbs((gazeNdcY + this.gazeSaccade.y) * g.maxEyePitch * g.intensity * tracking.eyes, g.maxEyePitch) + gazeY;
     for (const eye of [leftEye, rightEye]) {
       if (!eye) continue;
       const localQ = new THREE.Quaternion();

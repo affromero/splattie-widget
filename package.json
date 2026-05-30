@@ -33,8 +33,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && vite build --config vite.config.cdn.ts",
+    "type-check": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "ci": "npm run type-check && npm run test && npm run build"
   },
   "keywords": [
     "gaussian-splatting",

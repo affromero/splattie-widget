@@ -1,0 +1,54 @@
+# Pre-commit for splattie-widget (standalone TS library).
+#
+#   $ pre-commit install --install-hooks
+#   $ pre-commit run --all-files
+#
+# Quality gates mirror CI (.github/workflows/ci.yml): type-check + tests run as
+# project-level local hooks; the rest is file hygiene. No ESLint yet (the lib has
+# no linter configured); add typescript-eslint here + in CI when introduced.
+default_install_hook_types:
+    - pre-commit
+
+# Never touch generated artifacts, deps, or binary media.
+exclude: |
+    (?x)^(
+      dist/.*|
+      node_modules/.*|
+      assets/.*
+    )$
+
+repos:
+    - repo: https://github.com/pre-commit/pre-commit-hooks
+      rev: v6.0.0
+      hooks:
+          - id: trailing-whitespace
+          - id: end-of-file-fixer
+          - id: mixed-line-ending
+            args: [--fix, lf]
+          - id: check-yaml
+            exclude: ^\.pre-commit-config\.yaml$
+          - id: check-merge-conflict
+          - id: check-case-conflict
+          - id: check-added-large-files
+            args: [--maxkb=2048]
+          # tsconfig.json is JSONC (comments) — exclude from the strict JSON hook.
+          - id: check-json
+            exclude: ^tsconfig\.json$
+
+    - repo: local
+      hooks:
+          - id: type-check
+            name: tsc --noEmit
+            entry: npm run type-check
+            language: system
+            files: \.(ts|tsx)$
+            pass_filenames: false
+            require_serial: true
+
+          - id: test
+            name: vitest run
+            entry: npm run test
+            language: system
+            files: \.(ts|tsx)$
+            pass_filenames: false
+            require_serial: true

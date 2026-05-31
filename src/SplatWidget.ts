@@ -327,7 +327,7 @@ export class SplatWidget extends HTMLElement {
     // Respect prefers-reduced-motion: render the resting pose once and stop, so
     // there's no idle float, blink, saccade, or cursor tracking.
     if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      this.renderStaticFrame();
+      this.renderStaticFrames();
       return;
     }
 
@@ -422,6 +422,16 @@ export class SplatWidget extends HTMLElement {
         }
       }
     });
+  }
+
+  private renderStaticFrames(frames = 30): void {
+    let remaining = frames;
+    const render = () => {
+      this.renderStaticFrame();
+      remaining -= 1;
+      if (remaining > 0 && this.spark) requestAnimationFrame(render);
+    };
+    render();
   }
 
   private renderStaticFrame(): void {

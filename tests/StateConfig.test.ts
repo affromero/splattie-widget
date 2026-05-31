@@ -13,6 +13,13 @@ describe('createDefaultConfig', () => {
     expect(g.deadzone).toBeGreaterThan(0);
     expect(g.saccade.enabled).toBe(true);
   });
+
+  it('uses body-specific camera and tracking defaults for body bundles', () => {
+    const body = createDefaultConfig('body');
+    expect(body.defaults.camera).toMatchObject({ phi: 90, radius: 2.4, fov: 45 });
+    expect(body.states.idle.tracking).toMatchObject({ head: 1.0, torso: 0.3 });
+    expect(body.states.idle.expression).toEqual({});
+  });
 });
 
 describe('mergeWithDefaults', () => {

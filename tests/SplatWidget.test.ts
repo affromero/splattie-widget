@@ -143,4 +143,100 @@ describe('SplatWidget', () => {
       'head',
     );
   });
+
+  it('exposes loaded rig joints for category-specific editor controls', async () => {
+    createSparkInstanceMock.mockResolvedValueOnce({
+      renderer: {
+        render,
+        setAnimationLoop,
+        dispose: vi.fn(),
+        setClearColor: vi.fn(),
+      },
+      scene: new THREE.Scene(),
+      camera: new THREE.PerspectiveCamera(60, 1, 0.001, 100),
+      splatMesh: new THREE.Object3D(),
+      skinning: null,
+      bones: [
+        { name: 'root', pos: [0, 0, 0], idx: 0, parentIdx: -1 },
+        { name: 'arm', pos: [0, 1, 0], idx: 1, parentIdx: 0 },
+        { name: 'virtualSmile', pos: [0, 0, 1], idx: 2, parentIdx: 0, virtual: true },
+      ],
+      canvas: document.createElement('canvas'),
+      baselinePositions: null,
+      packedArray: null,
+      packedSplatsRef: null,
+    });
+
+    const widget = document.createElement(tagName) as SplatWidget;
+    widget.setAttribute('src', 'object.ply');
+
+    await widget.connectedCallback();
+
+    expect(widget.rigJoints()).toEqual([
+      { name: 'root', index: 0, parentIndex: -1 },
+      { name: 'arm', index: 1, parentIndex: 0 },
+    ]);
+  });
+
+  it('uses the object skeleton for generic cursor follow', async () => {
+    const setBoneQuatPos = vi.fn();
+    const updateBones = vi.fn();
+    createSparkInstanceMock.mockResolvedValueOnce({
+      renderer: {
+        render,
+        setAnimationLoop,
+        dispose: vi.fn(),
+        setClearColor: vi.fn(),
+      },
+      scene: new THREE.Scene(),
+      camera: new THREE.PerspectiveCamera(60, 1, 0.001, 100),
+      splatMesh: new THREE.Object3D(),
+      skinning: { setBoneQuatPos, updateBones },
+      bones: [
+        { name: 'root', pos: [0, 0, 0], idx: 0, parentIdx: -1 },
+        { name: 'branch', pos: [0, 1, 0], idx: 1, parentIdx: 0 },
+        { name: 'leaf', pos: [0, 2, 0], idx: 2, parentIdx: 1 },
+      ],
+      canvas: document.createElement('canvas'),
+      baselinePositions: null,
+      packedArray: null,
+      packedSplatsRef: null,
+    });
+
+    const widget = document.createElement(tagName) as SplatWidget;
+    vi.spyOn(widget, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 100,
+      right: 200,
+      bottom: 100,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    widget.setAttribute('src', 'object.ply');
+
+    await widget.connectedCallback();
+    (widget as unknown as { _assetType: string })._assetType = 'object';
+    widget._stateMachine?.updateStates({
+      idle: {
+        ghost: { amplitude: 0, frequency: 0, wobble: 0 },
+        expression: {},
+        camera: { theta: 0, phi: 80, radius: 2 },
+        rotation: [0, 0, 0],
+        tracking: { head: 1, torso: 1 },
+        pose: {},
+      },
+    });
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 200, clientY: 50 }));
+    const loop = setAnimationLoop.mock.calls[0][0] as (timeMs: number) => void;
+    loop(16);
+
+    const rootCall = setBoneQuatPos.mock.calls.find(([idx]) => idx === 0);
+    const branchCall = setBoneQuatPos.mock.calls.find(([idx]) => idx === 1);
+    expect((rootCall![1] as THREE.Quaternion).y).toBeGreaterThan(0);
+    expect((branchCall![1] as THREE.Quaternion).y).toBeGreaterThan(0);
+    expect(updateBones).toHaveBeenCalled();
+  });
 });

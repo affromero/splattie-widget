@@ -19,6 +19,28 @@ import type { SplattieManifest, WidgetConfig } from './types';
 import { applyDeadzone, clampAbs } from './features/GazeMath';
 
 const SACCADE_SUPPRESS_VEL = 0.6; // smoothed-cursor speed (NDC/s) at which saccades fully suppress
+const AXIS_X = new THREE.Vector3(1, 0, 0);
+const AXIS_Y = new THREE.Vector3(0, 1, 0);
+const IDENTITY_QUAT = new THREE.Quaternion();
+
+type ObjectRigJoint = {
+  name: string;
+  index: number;
+  parentIndex: number;
+  depth: number;
+  leaf: boolean;
+  sx: number;
+  sy: number;
+};
+type ObjectRigEdge = { from: string; to: string; x1: number; y1: number; x2: number; y2: number };
+type ObjectRigHandle = { joint: string; handleJoint: string; sx: number; sy: number };
+type ObjectRigGraph = { joints: ObjectRigJoint[]; edges: ObjectRigEdge[]; handles: ObjectRigHandle[] };
+
+function yawPitch(yaw: number, pitch: number): THREE.Quaternion {
+  return new THREE.Quaternion()
+    .setFromAxisAngle(AXIS_Y, yaw)
+    .multiply(new THREE.Quaternion().setFromAxisAngle(AXIS_X, -pitch));
+}
 
 export class SplatWidget extends HTMLElement {
   private spark: SparkInstance | null = null;
@@ -50,6 +72,142 @@ export class SplatWidget extends HTMLElement {
   /** Asset type of the loaded bundle ('head' until a manifest says otherwise). */
   get assetType(): AssetType {
     return this._assetType;
+  }
+
+  /** Loaded rig joints in skeleton order, for editor UIs that author arbitrary poses. */
+  rigJoints(): { name: string; index: number; parentIndex: number }[] {
+    return this.spark?.bones
+      .filter((bone) => !bone.virtual)
+      .map((bone) => ({ name: bone.name, index: bone.idx, parentIndex: bone.parentIdx })) ?? [];
+  }
+
+  /** Current projected object skeleton graph for editor overlays. */
+  objectRigGraph(): ObjectRigGraph {
+    if (this._assetType !== 'object' || !this.spark) return { joints: [], edges: [], handles: [] };
+
+    const bones = this.spark.bones.filter((bone) => !bone.virtual);
+    const byIdx = new Map(bones.map((bone) => [bone.idx, bone]));
+    const parentIdxs = new Set(bones.map((bone) => bone.parentIdx).filter((idx) => idx >= 0));
+    const depths = this.objectBoneDepths(bones);
+    const world = forwardKinematics(this.spark.bones, this.bodyLocalRots());
+
+    const joints: ObjectRigJoint[] = [];
+    const projected = new Map<number, [number, number]>();
+    for (const bone of bones) {
+      const posed = world.get(bone.idx);
+      const screen = posed ? this.projectToScreen(posed.pos) : null;
+      if (!screen) continue;
+      projected.set(bone.idx, screen);
+      joints.push({
+        name: bone.name,
+        index: bone.idx,
+        parentIndex: bone.parentIdx,
+        depth: depths.get(bone.idx) ?? 0,
+        leaf: !parentIdxs.has(bone.idx),
+        sx: screen[0],
+        sy: screen[1],
+      });
+    }
+
+    const edges: ObjectRigEdge[] = [];
+    for (const bone of bones) {
+      if (bone.parentIdx < 0) continue;
+      const parent = byIdx.get(bone.parentIdx);
+      const a = projected.get(bone.parentIdx);
+      const b = projected.get(bone.idx);
+      if (!parent || !a || !b) continue;
+      edges.push({ from: parent.name, to: bone.name, x1: a[0], y1: a[1], x2: b[0], y2: b[1] });
+    }
+
+    const handles: ObjectRigHandle[] = [];
+    for (const bone of bones) {
+      if (bone.parentIdx < 0 || parentIdxs.has(bone.idx)) continue;
+      const screen = projected.get(bone.idx);
+      const rotated = byIdx.get(bone.parentIdx) ?? bone;
+      if (screen) handles.push({ joint: rotated.name, handleJoint: bone.name, sx: screen[0], sy: screen[1] });
+    }
+    return { joints, edges, handles };
+  }
+
+  /** Leaf handles for arbitrary object rigs. Dragging a leaf rotates its parent joint. */
+  objectPoseHandles(): { joint: string; handleJoint: string; sx: number; sy: number }[] {
+    return this.objectRigGraph().handles;
+  }
+
+  /** Generic object chain solve for a dragged terminal joint. */
+  solveObjectHandleToScreen(
+    handleJoint: string,
+    sx: number,
+    sy: number,
+  ): { joint: string; quat: [number, number, number, number] }[] | null {
+    if (this._assetType !== 'object' || !this.spark) return null;
+    const byName = new Map(this.spark.bones.map((bone) => [bone.name, bone]));
+    const endB = byName.get(handleJoint);
+    const midB = endB ? this.spark.bones[endB.parentIdx] : undefined;
+    if (!endB || !midB) return null;
+
+    const localRots = this.bodyLocalRots();
+    const world = forwardKinematics(this.spark.bones, localRots);
+    const wEnd = world.get(endB.idx);
+    const wMid = world.get(midB.idx);
+    if (!wEnd || !wMid) return null;
+    const target = this.unprojectToPlane(sx, sy, wEnd.pos);
+    if (!target) return null;
+
+    const rootB = midB.parentIdx >= 0 ? this.spark.bones[midB.parentIdx] : undefined;
+    const wRoot = rootB ? world.get(rootB.idx) : undefined;
+    if (rootB && wRoot) {
+      const sol = solveTwoBoneIK(
+        wRoot.pos,
+        wMid.pos,
+        wEnd.pos,
+        target,
+        wRoot.quat,
+        wMid.quat,
+        localRots.get(rootB.name) ?? IDENTITY_QUAT,
+        localRots.get(midB.name) ?? IDENTITY_QUAT,
+        null,
+      );
+      const root = clampQuatNear(sol.rootLocal, IDENTITY_QUAT, 1.2);
+      const mid = clampQuatNear(sol.midLocal, IDENTITY_QUAT, 0.9);
+      return [
+        { joint: rootB.name, quat: [root.x, root.y, root.z, root.w] },
+        { joint: midB.name, quat: [mid.x, mid.y, mid.z, mid.w] },
+      ];
+    }
+
+    const current = wEnd.pos.clone().sub(wMid.pos);
+    const desired = target.clone().sub(wMid.pos);
+    if (current.lengthSq() < 1e-8 || desired.lengthSq() < 1e-8) return null;
+    const deltaWorld = new THREE.Quaternion().setFromUnitVectors(current.normalize(), desired.normalize());
+    const parentWorld = midB.parentIdx >= 0 ? world.get(midB.parentIdx)?.quat ?? IDENTITY_QUAT : IDENTITY_QUAT;
+    const localDelta = parentWorld.clone().invert().multiply(deltaWorld).multiply(parentWorld);
+    const currentLocal = localRots.get(midB.name) ?? IDENTITY_QUAT;
+    const q = clampQuatNear(localDelta.multiply(currentLocal), IDENTITY_QUAT, 1.2);
+    return [{ joint: midB.name, quat: [q.x, q.y, q.z, q.w] }];
+  }
+
+  private usesFlatLbsRig(): boolean {
+    return this._assetType === 'body' || this._assetType === 'object';
+  }
+
+  private objectBoneDepths(bones: BoneInfo[]): Map<number, number> {
+    const byIdx = new Map(bones.map((bone) => [bone.idx, bone]));
+    const cache = new Map<number, number>();
+    const depthOf = (bone: BoneInfo): number => {
+      const cached = cache.get(bone.idx);
+      if (cached !== undefined) return cached;
+      if (bone.parentIdx < 0) {
+        cache.set(bone.idx, 0);
+        return 0;
+      }
+      const parent = byIdx.get(bone.parentIdx);
+      const depth = parent ? depthOf(parent) + 1 : 0;
+      cache.set(bone.idx, depth);
+      return depth;
+    };
+    for (const bone of bones) depthOf(bone);
+    return cache;
   }
 
   // ── Body IK authoring API (consumed by the editor's drag handles) ──
@@ -365,8 +523,8 @@ export class SplatWidget extends HTMLElement {
 
       // Dimension 2 + 5: Expressions + cursor tracking via SplatSkinning
       if (this.spark.skinning && this.spark.bones.length > 0) {
-        if (this._assetType === 'body') {
-          this.applyBodySkinning(this.spark.skinning, this.spark.bones, frame);
+        if (this.usesFlatLbsRig()) {
+          this.applyFlatRigSkinning(this.spark.skinning, this.spark.bones, frame);
         } else {
           this.applyHeadSkinning(this.spark.skinning, this.spark.bones, frame);
         }
@@ -445,8 +603,8 @@ export class SplatWidget extends HTMLElement {
     // Cursor smoothing never runs, so the skinning sees centered eyes + the
     // resting expression — a neutral, still pose.
     if (this.spark.skinning && this.spark.bones.length > 0) {
-      if (this._assetType === 'body') {
-        this.applyBodySkinning(this.spark.skinning, this.spark.bones, frame);
+      if (this.usesFlatLbsRig()) {
+        this.applyFlatRigSkinning(this.spark.skinning, this.spark.bones, frame);
       } else {
         this.applyHeadSkinning(this.spark.skinning, this.spark.bones, frame);
       }
@@ -459,11 +617,9 @@ export class SplatWidget extends HTMLElement {
     renderer.render(scene, camera);
   }
 
-  // Body skinning (SMPL-X) via forward kinematics: a resting pose (arms down from
-  // LHM's baked T-pose) plus head + torso look-at toward the cursor, composed as
-  // local joint rotations. FK turns those into per-bone world transforms, so the
-  // head turns as a whole (jaw/eyes inherit it) and the arms rotate rigidly.
-  private applyBodySkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {
+  // Flat skeleton skinning via forward kinematics. Body bundles use SMPL-X names for
+  // head/torso look-at; object bundles use generated hierarchy for root/leaf follow.
+  private applyFlatRigSkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {
     const sk = skinning as {
       setBoneQuatPos: (idx: number, q: THREE.Quaternion, p: THREE.Vector3) => void;
       updateBones: () => void;
@@ -477,9 +633,15 @@ export class SplatWidget extends HTMLElement {
       const q = pose[joint];
       localRots.set(joint, new THREE.Quaternion(q[0], q[1], q[2], q[3]));
     }
-    if (!this.poseAuthoring) {
+    if (!this.poseAuthoring && this._assetType === 'body') {
       const look = this.bodyLookAt.localRotations(this.cursor.ndcX, this.cursor.ndcY, tracking.head ?? 0, tracking.torso ?? 0);
       for (const [joint, quat] of look) localRots.set(joint, quat);
+    } else if (!this.poseAuthoring && this._assetType === 'object') {
+      const look = this.objectLookAtLocalRotations(bones, tracking.torso ?? 0, tracking.head ?? 0);
+      for (const [joint, quat] of look) {
+        const existing = localRots.get(joint) ?? new THREE.Quaternion();
+        localRots.set(joint, existing.clone().multiply(quat));
+      }
     }
 
     // Spark needs every bone's current transform each frame (unset joints blank the
@@ -490,6 +652,37 @@ export class SplatWidget extends HTMLElement {
       if (posed) sk.setBoneQuatPos(bone.idx, posed.quat, posed.pos);
     }
     sk.updateBones();
+  }
+
+  private objectLookAtLocalRotations(
+    bones: BoneInfo[],
+    rootTrack: number,
+    jointTrack: number,
+  ): Map<string, THREE.Quaternion> {
+    const cx = clampAbs(this.cursor.smoothX, 1);
+    const cy = clampAbs(this.cursor.smoothY, 1);
+    const out = new Map<string, THREE.Quaternion>();
+    if (rootTrack > 0) {
+      for (const bone of bones) {
+        if (bone.virtual || bone.parentIdx >= 0) continue;
+        out.set(bone.name, yawPitch(cx * 0.16 * rootTrack, cy * 0.08 * rootTrack));
+      }
+    }
+    if (jointTrack <= 0) return out;
+
+    const parentIdxs = new Set(bones.map((bone) => bone.parentIdx).filter((idx) => idx >= 0));
+    const byIdx = new Map(bones.map((bone) => [bone.idx, bone]));
+    const branchIdxs = new Set<number>();
+    for (const bone of bones) {
+      if (bone.virtual || bone.parentIdx < 0 || parentIdxs.has(bone.idx)) continue;
+      branchIdxs.add(bone.parentIdx);
+    }
+    for (const idx of branchIdxs) {
+      const bone = byIdx.get(idx);
+      if (!bone || bone.virtual || bone.parentIdx < 0) continue;
+      out.set(bone.name, yawPitch(cx * 0.1 * jointTrack, cy * 0.06 * jointTrack));
+    }
+    return out;
   }
 
   private applyHeadSkinning(skinning: unknown, bones: BoneInfo[], frame: typeof StateMachine.prototype.currentFrame): void {

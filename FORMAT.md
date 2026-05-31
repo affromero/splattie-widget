@@ -1,7 +1,7 @@
 # `.splattie` Format Specification
 
 A `.splattie` file is a ZIP archive that bundles a 3D Gaussian Splatting
-avatar with the metadata, skeleton, weights, expression basis, and
+asset with the metadata, skeleton, weights, expression basis, and
 interaction states required to make it reactive in the browser.
 
 The format is intentionally tied to the
@@ -20,12 +20,15 @@ versions disagree the widget throws.
 ## ZIP layout
 
 ```
-avatar.splattie
+asset.splattie
 ├── manifest.json             # required, MUST be present
 ├── <splat>.ply | <splat>.spz # required, gaussian splats
-├── bone_tree.json            # optional, FLAME skeleton
-├── lbs_weight_20k.json       # optional, per-splat bone weights
-├── expression_basis.bin      # optional, FLAME blendshape basis
+├── bone_tree.json            # optional, FLAME skeleton for heads
+├── lbs_weight_20k.json       # optional, JSON per-splat FLAME weights
+├── expression_basis.bin      # optional, FLAME blendshape basis for heads
+├── skeleton.json             # optional, SMPL-X or object skeleton
+├── lbs_weights.json          # optional, JSON sparse body LBS weights
+├── lbs_weights.bin           # optional, binary sparse object LBS weights
 └── states.json               # optional, interaction states
 ```
 
@@ -40,19 +43,19 @@ file is missing it errors out.
 ```jsonc
 {
   "format": "splattie",
-  "formatVersion": "0.2.0",
+  "formatVersion": "0.3.0",
   "assetType": "head",                   // "head" | "body" | "object"
 
   "generator": {
-    "method": "lam",                     // "lam" (head) | "lhm" (body) | ...
+    "method": "lam",                     // "lam" | "lhm" | "trellis-puppeteer" | ...
     "methodVersion": "20k-siggraph2025", // optional, free-form
-    "tool": "generate_splattie_batch.py",
+    "tool": "splattie-backend",
     "createdAt": "2026-05-27T18:00:00Z"  // ISO-8601 UTC
   },
 
   "avatar": {
     "splat": {
-      "file": "avatar.ply",               // ZIP entry name
+      "file": "asset.ply",                // ZIP entry name
       "format": "ply",                    // "ply" | "spz"
       "numGaussians": 20018,
       "topology": "flame-20k"             // free-form topology tag
@@ -89,7 +92,7 @@ file is missing it errors out.
 | `format` | yes | Always the string `"splattie"` |
 | `formatVersion` | yes | MUST equal the widget version exactly (pre-1.0) |
 | `assetType` | yes | `"head"`, `"body"`, or `"object"` — selects the widget's skinning code path and rig conventions |
-| `generator.method` | yes | Identifies the asset-generation pipeline (`lam` heads, `lhm` bodies, …) |
+| `generator.method` | yes | Identifies the asset-generation pipeline (`lam` heads, `lhm` bodies, `trellis-puppeteer` objects, …) |
 | `generator.tool` | yes | Filename of the producing script |
 | `generator.createdAt` | yes | ISO-8601 timestamp |
 | `avatar.splat.file` | yes | ZIP entry name, must exist |
@@ -111,27 +114,32 @@ file is missing it errors out.
 names it expects. Each asset type owns a deterministic path — there is no
 cross-type translation.
 
-| Role | `head` (FLAME rig) | `body` (SMPL-X rig) |
-|------|--------------------|---------------------|
-| Look-at root | `neck` | `head` |
-| Left / right eye | `leftEye` / `rightEye` | `left_eye_smplhf` / `right_eye_smplhf` |
-| Jaw | `jaw` | `jaw` (unused for cursor) |
-| Left arm chain | n/a | `left_collar → left_shoulder → left_elbow → left_wrist` |
-| Right arm chain | n/a | `right_collar → right_shoulder → right_elbow → right_wrist` |
+| Role | `head` (FLAME rig) | `body` (SMPL-X rig) | `object` (arbitrary rig) |
+|------|--------------------|---------------------|--------------------------|
+| Look-at root | `neck` | `head` | root joint |
+| Left / right eye | `leftEye` / `rightEye` | `left_eye_smplhf` / `right_eye_smplhf` | n/a |
+| Jaw | `jaw` | `jaw` (unused for cursor) | n/a |
+| Left arm chain | n/a | `left_collar → left_shoulder → left_elbow → left_wrist` | terminal joint chain |
+| Right arm chain | n/a | `right_collar → right_shoulder → right_elbow → right_wrist` | terminal joint chain |
 
-- `animation.skeleton.rig` is `"flame"` for heads and `"smpl-x"` for bodies.
+- `animation.skeleton.rig` is `"flame"` for heads, `"smplx"` for bodies, and
+  `"puppeteer-object"` for object bundles.
 - FLAME per-splat expression basis (`animation.expression.basis`) is **head-only**;
-  body manifests set it to `null` and the widget ignores any `expression-basis`
-  attribute for non-head bundles.
+  body and object manifests set it to `null` and the widget ignores any
+  `expression-basis` attribute for non-head bundles.
+- Object manifests use `lbs_weights.bin` with `format: "lbsw-v1"`.
+  The skeleton joint names are not prescribed; the widget derives root and
+  terminal handles from the hierarchy.
 
 ### Tracking fields (`WidgetConfig.states[*].tracking`)
 
 | Field | Asset type | Meaning |
 |-------|-----------|---------|
-| `eyes` | all | Eye-gaze cursor follow strength |
-| `head` | all | Head/neck turn strength |
+| `eyes` | head | Eye-gaze cursor follow strength |
+| `head` | head/body/object | Heads and bodies: head/neck turn strength. Objects: terminal-joint follow strength |
 | `armReach` | body | How far the nearer arm reaches toward the cursor (CCD IK) |
 | `shoulderFollow` | body | How much the shoulders rotate to follow head yaw |
+| `torso` | body/object | Bodies: torso follow strength. Objects: root-joint follow strength |
 
 ### Editor ↔ skinning expression contract (body)
 
@@ -144,9 +152,12 @@ consumes the same keys (summed with cursor motion, defaults `0`). Source of trut
 | `shoulderRaiseL` / `shoulderRaiseR` | `left_collar` / `right_collar` | shrug (summed with cursor `shoulderFollow`) |
 | `elbowBendL` / `elbowBendR` | `left_elbow` / `right_elbow` | bend (post-multiplied after IK on the active arm) |
 
-> Body skinning + these editor controls land in Phase 1.D / 1.E. Phase 1.A
-> ships the `assetType` plumbing; loading a body bundle today errors loudly
-> until the body code path exists.
+### Editor ↔ skinning expression contract (object)
+
+Object editor controls write `state.pose[jointName]` quaternions directly. The
+widget runs forward kinematics over the arbitrary skeleton, applies sparse LBS
+weights, and exposes projected terminal handles through `objectRigGraph()` for
+drag-to-pose editing.
 
 ---
 
@@ -162,14 +173,11 @@ Why so strict? The widget bakes its `package.json` version into the
 bundle at build time via Vite's `define`. A `.splattie` produced by an
 older widget probably reads asset offsets that the newer widget no
 longer understands, or vice versa. Failing loud is cheaper than
-silently rendering a half-broken avatar.
+silently rendering a half-broken asset.
 
-Migration path: regenerate the `.splattie` against the new widget
-version. The bundled
-[`add_manifest_to_splattie.py`](../../backend/scripts/add_manifest_to_splattie.py)
-script can update existing bundles in-place without re-running the
-head-generation pipeline as long as the underlying assets are still
-compatible.
+Migration path: regenerate the `.splattie` against the new widget version, or
+use the backend `splattie add-manifest` command for compatible manifest-only
+stamps.
 
 After 1.0 the policy will relax to standard semver:
 
@@ -187,25 +195,26 @@ After 1.0 the policy will relax to standard semver:
 ### From the GPU pipeline
 
 ```bash
-# from backend/vendor/LAM/
-python ../../scripts/generate_splattie_batch.py \
-    --images-dir /tmp/portraits \
+uv run --directory backend splattie generate-splattie-batch \
+    --images-dir /tmp/images \
     --output-dir /tmp/splattie_out
 ```
 
-This calls LAM inference per image, parses the PLY header for the
-gaussian count, hashes the source image, and writes a manifest with the
-current widget version pulled from `packages/splattie-widget/package.json`.
+This runs the selected backend method, parses the PLY header for the Gaussian
+count, hashes the source image, and writes a manifest with the current widget
+version pulled from `packages/splattie-widget/package.json`.
 
 ### Re-bundle an existing `.splattie`
 
-If you already have the raw PLY + bone files in a ZIP (the pre-manifest
-layout), wrap a manifest around it without re-running inference:
+If you already have the raw PLY + rig files in a ZIP (or need to stamp a new
+compatible format version), wrap a manifest around it without re-running
+inference:
 
 ```bash
-python backend/scripts/add_manifest_to_splattie.py \
-    --splatties-dir apps/web/public/demos \
-    --thumbs-dir apps/web/public/demos/thumbs
+uv run --directory backend splattie add-manifest \
+    --splatties-dir apps/web/public/demos/heads \
+    --thumbs-dir apps/web/public/demos/heads \
+    --asset-type head
 ```
 
 The script is idempotent - it skips files that already declare a
@@ -225,7 +234,7 @@ the bundle with the same manifest plus the user's edited
 Quick manual check:
 
 ```bash
-unzip -p avatar.splattie manifest.json | jq
+unzip -p asset.splattie manifest.json | jq
 ```
 
 The widget runs the same validation at load time:
@@ -261,6 +270,7 @@ source photo / mesh; the format is meant to be cheap to recreate.
 | Type definition | [`src/types.ts`](src/types.ts) (`SplattieManifest`) |
 | Loader + validation | [`src/SplatWidget.ts`](src/SplatWidget.ts) |
 | Default config schema | [`src/state/StateConfig.ts`](src/state/StateConfig.ts) |
-| Generator (GPU) | [`backend/scripts/generate_splattie_batch.py`](../../backend/scripts/generate_splattie_batch.py) |
-| Re-bundler (CPU) | [`backend/scripts/add_manifest_to_splattie.py`](../../backend/scripts/add_manifest_to_splattie.py) |
+| Generator (GPU) | [`backend/src/splattie/cli/batch.py`](../../backend/src/splattie/cli/batch.py) |
+| Object bundler | [`backend/src/splattie/cli/object_bundle.py`](../../backend/src/splattie/cli/object_bundle.py) |
+| Re-bundler (CPU) | [`backend/src/splattie/cli/bundle_tools.py`](../../backend/src/splattie/cli/bundle_tools.py) |
 | Editor re-export | [`apps/web/public/editor.html`](../../apps/web/public/editor.html) |

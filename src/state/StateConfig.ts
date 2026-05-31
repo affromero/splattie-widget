@@ -14,6 +14,7 @@ const DEFAULT_STATE: StateDefinition = {
 export type AssetType = 'head' | 'body' | 'object';
 
 const BODY_CAMERA: CameraConfig = { theta: 0, phi: 90, radius: 2.4, lookAt: 'auto', fov: 45 };
+const OBJECT_CAMERA: CameraConfig = { theta: 0, phi: 82, radius: 1.35, lookAt: 'auto', fov: 45 };
 
 /** Body default config: head/torso look-at tracking, no FLAME expressions, framed
  * for a standing figure. Mirrors bundle.py's DEFAULT_STATES_BODY so a body bundle's
@@ -66,8 +67,60 @@ function createBodyConfig(): WidgetConfig {
   };
 }
 
+function createObjectConfig(): WidgetConfig {
+  return {
+    defaults: {
+      camera: OBJECT_CAMERA,
+      // Object rigs have no guaranteed semantic eye/head joints. Keep the gaze block
+      // inert so generic object bundles can load without body/head assumptions.
+      gaze: {
+        intensity: 0,
+        smoothingTau: 0.18,
+        deadzone: 0.06,
+        maxEyeYaw: 0,
+        maxEyePitch: 0,
+        maxNeckYaw: 0,
+        maxNeckPitch: 0,
+        saccade: { ...DEFAULT_SACCADE_CONFIG, enabled: false, amplitude: 0, intervalMs: [...DEFAULT_SACCADE_CONFIG.intervalMs] },
+      },
+    },
+    states: {
+      idle: {
+        ghost: { amplitude: 0.001, frequency: 0.25, wobble: 0.08 },
+        expression: {},
+        camera: OBJECT_CAMERA,
+        rotation: [0, 0, 0],
+        tracking: { head: 0.18, torso: 0.28 },
+        pose: {},
+      },
+      hover: {
+        ghost: { amplitude: 0.002, frequency: 0.4, wobble: 0.12 },
+        expression: {},
+        camera: { theta: 0, phi: 82, radius: 1.25, lookAt: 'auto', fov: 45 },
+        rotation: [0, 0, 0],
+        tracking: { head: 0.3, torso: 0.4 },
+        pose: {},
+      },
+      click: {
+        ghost: { amplitude: 0.001, frequency: 0.6, wobble: 0.05 },
+        expression: {},
+        camera: { theta: 0, phi: 82, radius: 1.18, lookAt: 'auto', fov: 45 },
+        rotation: [0, 0, 0],
+        tracking: { head: 0.12, torso: 0.18 },
+        pose: {},
+      },
+    },
+    transitions: {
+      'idle->hover': { duration: 0.25, easing: 'ease-out' },
+      'hover->idle': { duration: 0.35, easing: 'ease-in' },
+      '*->click': { duration: 0.1, easing: 'snap' },
+    },
+  };
+}
+
 export function createDefaultConfig(assetType: AssetType = 'head'): WidgetConfig {
   if (assetType === 'body') return createBodyConfig();
+  if (assetType === 'object') return createObjectConfig();
   return {
     defaults: {
       camera: DEFAULT_CAMERA,

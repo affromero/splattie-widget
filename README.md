@@ -4,14 +4,14 @@
 
 # splattie-widget
 
-**Interactive 3D Gaussian Splatting - like Rive/Lottie for 3D**
+**Interactive rigged 3D Gaussian Splatting - like Rive/Lottie for 3D**
 
 [![npm](https://img.shields.io/npm/v/@afromero/splattie-widget?color=blue)](https://www.npmjs.com/package/@afromero/splattie-widget)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![Spark](https://img.shields.io/badge/Spark_2.0-MIT-green)](https://github.com/sparkjsdev/spark)
 [![Three.js](https://img.shields.io/badge/Three.js-r170+-black?logo=three.js)](https://threejs.org)
-[![Tests](https://img.shields.io/badge/tests-63_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-91_passing-brightgreen)]()
 [![Bundle](https://img.shields.io/badge/format-.splattie-orange)]()
 
 [Quick Start](#quick-start) · [Format Spec](FORMAT.md) · [API](#api) · [Editor](#visual-editor) · [How It Works](#how-it-works)
@@ -24,14 +24,14 @@
   <img src="assets/demo.gif" alt="Splattie Widget Demo" width="600" />
 </p>
 
-A web component that makes gaussian splats **reactive**. One file, one tag. **Heads** track the cursor with their eyes, blink, and emote on hover/click (FLAME rig); **bodies** turn their head and torso toward visitors and pose with two-bone arm IK (SMPL-X rig). 60fps, client-side. The widget branches on the bundle's `assetType` — same tag either way.
+A web component that makes Gaussian splats **reactive**. One file, one tag. **Heads** track the cursor with their eyes, blink, and emote on hover/click (FLAME rig); **bodies** turn their head and torso toward visitors and pose with two-bone arm IK (SMPL-X rig); **objects** use arbitrary skeletons and sparse LBS weights for cursor-follow and direct pose editing. 60fps, client-side. The widget branches on the bundle's `assetType` — same tag for heads, bodies, and objects.
 
 **[See it live at afromero.co](https://afromero.co)** | **[Create your own at splattie.app](https://splattie.app)**
 
 ## Quick Start
 
 ```html
-<splattie-widget src="avatar.splattie"></splattie-widget>
+<splattie-widget src="asset.splattie"></splattie-widget>
 <script type="module" src="https://unpkg.com/@afromero/splattie-widget"></script>
 ```
 
@@ -54,7 +54,7 @@ and locks the file's `formatVersion` to the widget version. See
 [`FORMAT.md`](FORMAT.md) for the full spec.
 
 ```
-avatar.splattie
+asset.splattie
 ├── manifest.json             # (required) declares every asset + assetType + formatVersion
 ├── *.ply or *.spz            # (required) Gaussian splats
 │
@@ -66,6 +66,10 @@ avatar.splattie
 │  # body (assetType: body) — SMPL-X rig:
 ├── skeleton.json             # (optional) 55-joint SMPL-X skeleton (baked-pose rest)
 ├── lbs_weights.json          # (optional) Per-gaussian sparse LBS weights
+│
+│  # object (assetType: object) — arbitrary skeleton rig:
+├── skeleton.json             # (optional) Object joint hierarchy + rest positions
+├── lbs_weights.bin           # (optional) Binary sparse per-gaussian LBS weights
 │
 └── states.json               # (optional) Interaction states
 ```
@@ -154,6 +158,27 @@ don't articulate.
 </details>
 
 <details>
+<summary><strong>skeleton.json</strong> + <strong>lbs_weights.bin</strong> - object rig</summary>
+
+Objects (`assetType: object`) use the same manifest-level LBS contract as bodies,
+but with an arbitrary joint hierarchy:
+
+```json
+// skeleton.json
+{ "rig": "puppeteer-object", "jointCount": 12, "names": ["root", "..."],
+  "parents": [-1, 0, ...], "restPositions": [[x, y, z], ...] }
+
+// manifest excerpt
+{ "weights": { "file": "lbs_weights.bin", "format": "lbsw-v1" } }
+```
+
+The binary weights file stores sparse uint16 joint indices and float16 weights for each
+Gaussian. The widget projects terminal joints as editor handles, solves simple
+joint-chain rotations when you drag a handle, and uses root/joint cursor-follow
+settings for lightweight interactivity.
+</details>
+
+<details>
 <summary><strong>states.json</strong> - interaction state definitions</summary>
 
 Each state (idle, hover, click) sets all 5 dimensions simultaneously.
@@ -191,7 +216,9 @@ Most likely to evolve. Without it: sensible defaults (eyes track, gentle float, 
 
 **From scratch**: ZIP a `.ply` with any combination of the optional files.
 
-**From a photo**: run [LAM](https://github.com/aigc3d/LAM) on a GPU, then bundle with the export script. Try it at [splattie.app](https://splattie.app).
+**From a photo or object image**: run the Splattie backend pipeline for heads
+(LAM), bodies (LHM), or objects (TRELLIS + Puppeteer), then bundle the result.
+Try it at [splattie.app](https://splattie.app).
 
 ## Five Dimensions of State
 
@@ -201,7 +228,7 @@ Most likely to evolve. Without it: sensible defaults (eyes track, gentle float, 
 | **Expression** | FLAME blendshapes + bones | Smile on hover, surprise on click |
 | **Camera** | Spherical position | Zoom in on hover |
 | **Rotation** | Pitch/yaw/roll | Tilt head on hover |
-| **Tracking** | Cursor-follow intensity | Heads: eyes/head. Bodies: head/torso turn toward the cursor |
+| **Tracking** | Cursor-follow intensity | Heads: eyes/head. Bodies: head/torso. Objects: root/joints |
 
 Interpolated between states with configurable easing and duration.
 
@@ -232,8 +259,8 @@ Two layers:
 
 ```javascript
 widget.addEventListener('splatload', () => {});   // ready
-widget.addEventListener('splathover', () => {});   // cursor on face
-widget.addEventListener('splatclick', () => {});   // clicked face
+widget.addEventListener('splathover', () => {});   // cursor over asset
+widget.addEventListener('splatclick', () => {});   // clicked asset
 widget.addEventListener('splatleave', () => {});   // cursor left
 widget.setState('hover');                           // force transition
 ```
@@ -244,7 +271,7 @@ widget.setState('hover');                           // force transition
 npm run dev  # http://localhost:4002
 ```
 
-Sliders for all 5 dimensions, camera sphere widget, state tabs with copy-forward, FLAME blendshape controls (heads), on-canvas IK drag handles to pose limbs (bodies), drag-and-drop `.splattie` upload, export when done.
+Sliders for all 5 dimensions, camera sphere widget, state tabs with copy-forward, FLAME blendshape controls (heads), on-canvas IK drag handles to pose limbs (bodies), skeleton handles for object pose editing, drag-and-drop `.splattie` upload, export when done.
 
 ## How It Works
 
@@ -256,10 +283,11 @@ Built on [Spark 2.0](https://github.com/sparkjsdev/spark) (MIT, World Labs).
 1. **State machine** with per-dimension interpolation (lerp, slerp, ease curves)
 2. **SplatSkinning** (dual quaternion) driving 5 FLAME bones from expression + cursor data (heads)
 3. **SMPL-X skinning** (55-joint LBS) for bodies — head/torso look-at + analytic two-bone arm IK, composed via forward kinematics
-4. **Expression basis** - per-splat position offsets written to Spark's packed buffer (half-float, ~20K splats/frame)
-5. **Hit detection** via `readPixels` after render (pixel-perfect)
-6. **Auto-blink** with randomized interval and sine-curve via SplatEdit
-7. **Gyroscope** tracking on mobile (iOS permission prompt included)
+4. **Generic object skinning** for arbitrary skeletons — root/joint cursor-follow, projected skeleton handles, and drag-to-pose chain solving
+5. **Expression basis** - per-splat position offsets written to Spark's packed buffer (half-float, ~20K splats/frame)
+6. **Hit detection** via `readPixels` after render (pixel-perfect)
+7. **Auto-blink** with randomized interval and sine-curve via SplatEdit
+8. **Gyroscope** tracking on mobile (iOS permission prompt included)
 </details>
 
 ## Mobile
@@ -274,6 +302,8 @@ Chrome, Firefox, Safari, Edge. WebGL 2 required. No COOP/COEP headers needed.
 
 - [LAM](https://github.com/aigc3d/LAM) (SIGGRAPH 2025) - single-image 3DGS heads. Zixuan Zeng et al., AIGC3D team
 - [LHM](https://github.com/aigc3d/LHM) (SIGGRAPH 2025) - single-image 3DGS bodies. AIGC3D team
+- [TRELLIS](https://github.com/microsoft/TRELLIS) - single-image 3D asset reconstruction. Microsoft.
+- [Puppeteer](https://github.com/snap-research/Puppeteer) - automatic skeleton and skinning for generated 3D assets. Snap Research.
 - [FLAME](https://flame.is.tue.mpg.de/) - face model (heads). Tianye Li, Timo Bolkart, Michael J. Black, Hao Li, Javier Romero
 - [SMPL-X](https://smpl-x.is.tue.mpg.de/) - body model (bodies). Pavlakos, Choutas, Ghorbani, Bolkart, Osman, Tzionas, Black (MPI)
 - [Spark 2.0](https://github.com/sparkjsdev/spark) - World Labs (MIT)

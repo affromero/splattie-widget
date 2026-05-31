@@ -9,6 +9,61 @@ export interface BoneInfo {
   virtual?: boolean;
 }
 
+export interface SparseLbsWeights {
+  numGaussians: number;
+  jointCount?: number;
+  k: number;
+  indices: ArrayLike<number>;
+  weights: ArrayLike<number>;
+}
+
+export async function loadSparseLbsWeights(url: string): Promise<SparseLbsWeights> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`[splattie] failed to load LBS weights: ${res.status} ${res.statusText}`);
+  const buffer = await res.arrayBuffer();
+  const magic = buffer.byteLength >= 4
+    ? String.fromCharCode(...new Uint8Array(buffer, 0, 4))
+    : '';
+
+  if (magic !== 'LBSW') {
+    const parsed = JSON.parse(new TextDecoder().decode(buffer)) as SparseLbsWeights;
+    validateSparseLbsWeights(parsed);
+    return parsed;
+  }
+
+  if (buffer.byteLength < 20) throw new Error('[splattie] truncated LBSW weights file');
+  const view = new DataView(buffer);
+  const version = view.getUint32(4, true);
+  if (version !== 1) throw new Error(`[splattie] unsupported LBSW weights version ${version}`);
+
+  const numGaussians = view.getUint32(8, true);
+  const jointCount = view.getUint32(12, true);
+  const k = view.getUint32(16, true);
+  if (k < 1 || k > 4) throw new Error(`[splattie] LBSW k must be 1-4, got ${k}`);
+  const count = numGaussians * k;
+  const indicesOffset = 20;
+  const weightsOffset = indicesOffset + count * 2;
+  const expectedBytes = weightsOffset + count * 2;
+  if (buffer.byteLength !== expectedBytes) {
+    throw new Error('[splattie] invalid LBSW weights file size');
+  }
+
+  const indices = new Uint16Array(buffer, indicesOffset, count);
+  const weights16 = new Uint16Array(buffer, weightsOffset, count);
+  const weights = new Float32Array(count);
+  for (let i = 0; i < count; i++) weights[i] = halfToFloat(weights16[i]);
+
+  return { numGaussians, jointCount, k, indices, weights };
+}
+
+function validateSparseLbsWeights(weights: SparseLbsWeights): void {
+  if (weights.k < 1 || weights.k > 4) throw new Error(`[splattie] sparse LBS k must be 1-4, got ${weights.k}`);
+  const expected = weights.numGaussians * weights.k;
+  if (weights.indices.length !== expected || weights.weights.length !== expected) {
+    throw new Error('[splattie] sparse LBS weights length mismatch');
+  }
+}
+
 function computeVirtualBones(bones: BoneInfo[]): BoneInfo[] {
   const byName = new Map(bones.map(b => [b.name, b]));
   const jawBone = byName.get('jaw');
@@ -195,17 +250,23 @@ export async function createSparkInstance(
   const bones: BoneInfo[] = [];
   let baselinePositions: Float32Array | null = null;
 
-  if (boneTreeUrl && lbsWeightsUrl && assetType === 'body') {
-    // SMPL-X body rig: flat 55-joint skeleton + sparse top-K per-gaussian weights
-    // (produced by methods/lhm/bundle.py). No virtual bones — the look-at rotates
-    // the spine/neck/head chain directly.
+  if (boneTreeUrl && lbsWeightsUrl && (assetType === 'body' || assetType === 'object')) {
+    // Flat LBS rig: skeleton names + parent indices + rest positions, plus sparse
+    // top-K per-gaussian weights. Bodies use SMPL-X names; objects use arbitrary
+    // generated joint names. No FLAME virtual bones are added on this path.
     const [skeleton, weights] = (await Promise.all([
       fetch(boneTreeUrl).then((r) => r.json()),
-      fetch(lbsWeightsUrl).then((r) => r.json()),
+      loadSparseLbsWeights(lbsWeightsUrl),
     ])) as [
       { names: string[]; parents: number[]; restPositions: number[][] },
-      { numGaussians: number; k: number; indices: number[]; weights: number[] },
+      SparseLbsWeights,
     ];
+    if (skeleton.names.length !== skeleton.parents.length || skeleton.names.length !== skeleton.restPositions.length) {
+      throw new Error('[splattie] skeleton names/parents/restPositions length mismatch');
+    }
+    if (weights.jointCount !== undefined && weights.jointCount !== skeleton.names.length) {
+      throw new Error(`[splattie] weights jointCount ${weights.jointCount} does not match skeleton joint count ${skeleton.names.length}`);
+    }
 
     skeleton.names.forEach((name, idx) => {
       bones.push({ name, pos: skeleton.restPositions[idx] as [number, number, number], idx, parentIdx: skeleton.parents[idx] });

@@ -20,6 +20,23 @@ describe('createDefaultConfig', () => {
     expect(body.states.idle.tracking).toMatchObject({ head: 1.0, torso: 0.3 });
     expect(body.states.idle.expression).toEqual({});
   });
+
+  it('uses object-specific camera and skeleton-follow defaults for arbitrary rigged object bundles', () => {
+    const object = createDefaultConfig('object');
+    expect(object.defaults.camera).toMatchObject({ phi: 82, radius: 1.35, fov: 45 });
+    expect(object.defaults.gaze).toMatchObject({
+      intensity: 0,
+      maxEyeYaw: 0,
+      maxEyePitch: 0,
+      maxNeckYaw: 0,
+      maxNeckPitch: 0,
+    });
+    expect(object.defaults.gaze.saccade.enabled).toBe(false);
+    expect(object.states.idle.tracking.head).toBeGreaterThan(0);
+    expect(object.states.idle.tracking.torso).toBeGreaterThan(0);
+    expect(object.states.hover.pose).toEqual({});
+    expect(object.states.click.expression).toEqual({});
+  });
 });
 
 describe('mergeWithDefaults', () => {

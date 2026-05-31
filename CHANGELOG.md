@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0] - 2026-05-31
+
+### Added
+- Object `.splattie` support with arbitrary skeletons, binary sparse LBS weights, root/joint cursor-follow, and drag-to-pose skeleton handles.
+- Object-aware editor controls for camera, rotation, follow, rig joint sliders, and direct pose editing.
+- Runtime APIs for object rig inspection and handle solving: `rigJoints()`, `objectRigGraph()`, `objectPoseHandles()`, and `solveObjectHandleToScreen()`.
+
+### Changed
+- `.splattie` format `0.3.0` now covers heads, bodies, and general-purpose rigged objects under the same custom element.
+- README and format documentation now describe object bundles and the binary object weight contract.
+- Object defaults use asset-specific framing and follow behavior instead of inheriting avatar expression controls.
+
+### Fixed
+- Object bundles render upright with the production viewer transform and no longer expose head-only smile/jaw controls in the editor.
+
 ## [0.2.0] - 2026-05-31
 
 ### Added

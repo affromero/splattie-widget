@@ -11,9 +11,14 @@ const { createSparkInstanceMock } = vi.hoisted(() => ({
 
 vi.mock('@sparkjsdev/spark', () => ({
   SplatEdit: class {
+    isObject3D = true;
+    parent = null;
     constructor(options: unknown) {
       Object.assign(this, options);
     }
+
+    dispatchEvent() {}
+    removeFromParent() {}
   },
   SplatEditSdf: class {
     opacity = 1;
@@ -34,12 +39,10 @@ describe('SplatWidget', () => {
   const tagName = 'splattie-widget-test';
   let render: ReturnType<typeof vi.fn>;
   let setAnimationLoop: ReturnType<typeof vi.fn>;
-  let rafCallbacks: FrameRequestCallback[];
 
   beforeEach(() => {
     render = vi.fn();
     setAnimationLoop = vi.fn();
-    rafCallbacks = [];
 
     if (!customElements.get(tagName)) {
       customElements.define(tagName, SplatWidget);
@@ -55,10 +58,6 @@ describe('SplatWidget', () => {
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
     })));
-    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
-      rafCallbacks.push(callback);
-      return rafCallbacks.length;
-    }));
 
     createSparkInstanceMock.mockResolvedValue({
       renderer: {
@@ -85,17 +84,56 @@ describe('SplatWidget', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders a finite static burst instead of starting the animation loop for reduced-motion users', async () => {
+  it('keeps cursor tracking live for reduced-motion users', async () => {
+    const setBoneQuatPos = vi.fn();
+    const updateBones = vi.fn();
+    createSparkInstanceMock.mockResolvedValueOnce({
+      renderer: {
+        render,
+        setAnimationLoop,
+        dispose: vi.fn(),
+        setClearColor: vi.fn(),
+      },
+      scene: new THREE.Scene(),
+      camera: new THREE.PerspectiveCamera(60, 1, 0.001, 100),
+      splatMesh: new THREE.Object3D(),
+      skinning: { setBoneQuatPos, updateBones },
+      bones: [
+        { name: 'neck', pos: [0, 0, 0], idx: 0, parentIdx: -1 },
+        { name: 'leftEye', pos: [-0.03, 0.04, 0.08], idx: 1, parentIdx: 0 },
+        { name: 'rightEye', pos: [0.03, 0.04, 0.08], idx: 2, parentIdx: 0 },
+        { name: 'jaw', pos: [0, -0.04, 0.04], idx: 3, parentIdx: 0 },
+      ],
+      canvas: document.createElement('canvas'),
+      baselinePositions: null,
+      packedArray: null,
+      packedSplatsRef: null,
+    });
+
     const widget = document.createElement(tagName) as SplatWidget;
+    vi.spyOn(widget, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 100,
+      right: 200,
+      bottom: 100,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
     widget.setAttribute('src', 'avatar.ply');
 
     await widget.connectedCallback();
-    while (rafCallbacks.length > 0) {
-      rafCallbacks.shift()!(performance.now());
-    }
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 200, clientY: 50 }));
+    const loop = setAnimationLoop.mock.calls[0][0] as (timeMs: number) => void;
+    loop(16);
 
-    expect(render).toHaveBeenCalledTimes(30);
-    expect(setAnimationLoop).not.toHaveBeenCalled();
+    const leftEyeCall = setBoneQuatPos.mock.calls.find(([idx]) => idx === 1);
+    expect(leftEyeCall).toBeTruthy();
+    expect((leftEyeCall![1] as THREE.Quaternion).y).toBeGreaterThan(0);
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(setAnimationLoop).toHaveBeenCalledTimes(1);
     expect(createSparkInstanceMock).toHaveBeenCalledWith(
       widget,
       'avatar.ply',

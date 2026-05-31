@@ -323,13 +323,8 @@ export class SplatWidget extends HTMLElement {
 
   private startRenderLoop(): void {
     const { renderer, scene, camera } = this.spark!;
-
-    // Respect prefers-reduced-motion: render the resting pose once and stop, so
-    // there's no idle float, blink, saccade, or cursor tracking.
-    if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      this.renderStaticFrames();
-      return;
-    }
+    const reducedMotion = typeof matchMedia !== 'undefined'
+      && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     renderer.setAnimationLoop((timeMs: number) => {
       this.frameCount++;
@@ -349,7 +344,9 @@ export class SplatWidget extends HTMLElement {
       ) / Math.max(deltaTime, 1e-3);
       this.prevSmoothX = this.cursor.smoothX;
       this.prevSmoothY = this.cursor.smoothY;
-      this.gazeSaccade = this.saccade.update(deltaTime, Math.min(1, cursorVel / SACCADE_SUPPRESS_VEL));
+      this.gazeSaccade = reducedMotion
+        ? { x: 0, y: 0 }
+        : this.saccade.update(deltaTime, Math.min(1, cursorVel / SACCADE_SUPPRESS_VEL));
 
       const frame = this.stateMachine.currentFrame;
 
@@ -358,7 +355,7 @@ export class SplatWidget extends HTMLElement {
       // Dimension 1: Ghost
       mesh.position.set(0, 0, 0);
       mesh.rotation.set(0, 0, 0);
-      this.ghost.apply(mesh, frame.ghost, now);
+      if (!reducedMotion) this.ghost.apply(mesh, frame.ghost, now);
 
       // Dimension 4: Object rotation
       this.objectRotation.apply(mesh, frame.rotation);
@@ -383,8 +380,8 @@ export class SplatWidget extends HTMLElement {
 
       // Blink + squint via SplatEdit
       if (this.blinkEdit) {
-        const blink = this.autoBlink.getWeights();
-        const blinkVal = blink.eyeBlinkLeft ?? 0;
+        const blink = reducedMotion ? null : this.autoBlink.getWeights();
+        const blinkVal = blink?.eyeBlinkLeft ?? 0;
         const squint = frame.expression.eyeSquint ?? 0;
         const combined = Math.min(1, blinkVal + squint);
         this.blinkEdit.left.opacity = 1 - combined;

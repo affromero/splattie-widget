@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0] - 2026-05-31
+
+### Added
+- Full body `.splattie` support with SMPL-X skeletons, linear blend skinning weights, posed-rest handling, and body-aware camera framing.
+- Body editing controls for shoulder follow, arm reach, pose overrides, and head/torso look-at tracking.
+- Test coverage gates for deterministic renderer/util modules, including reduced-motion rendering and body IK regression coverage.
+
+### Changed
+- `.splattie` format `0.2.0` requires `manifest.assetType`, enabling heads, bodies, and future general-purpose objects to share one loader.
+- Expression-basis and PLY loading now handle compressed/body bundles with smaller generated assets.
+- Runtime motion defaults are calmer for static/reduced-motion contexts while preserving interactive tracking.
+
+### Fixed
+- Body skinning/rest-pose issues that caused stretched arms or unstable T-pose behavior.
+- Reduced-motion static render paths that could leave the widget blank.
+- Body IK hit-testing and handle visibility regressions in the inline editor.
+
 ## [0.1.1] - 2026-05-28
 
 ### Added

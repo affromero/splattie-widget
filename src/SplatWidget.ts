@@ -649,7 +649,15 @@ export class SplatWidget extends HTMLElement {
     const world = forwardKinematics(bones, localRots);
     for (const bone of bones) {
       const posed = world.get(bone.idx);
-      if (posed) sk.setBoneQuatPos(bone.idx, posed.quat, posed.pos);
+      if (!posed) continue;
+      // Spark's dual-quaternion skinning translates by (pos - restPos) and rotates the bound splats
+      // about the ORIGIN, not the joint. Pass pos' = worldPos + restPos - quat*restPos so the result
+      // is the correct pivot-relative transform quat*(x - restPos) + worldPos. Without this a joint
+      // offset from the origin (a body/quadruped head) swings sideways instead of turning in place;
+      // FLAME heads only looked right because the head sits at the origin (quat*restPos ~= restPos).
+      const rest = new THREE.Vector3(...bone.pos);
+      const pivotPos = posed.pos.clone().add(rest).sub(rest.clone().applyQuaternion(posed.quat));
+      sk.setBoneQuatPos(bone.idx, posed.quat, pivotPos);
     }
     sk.updateBones();
   }
@@ -662,6 +670,34 @@ export class SplatWidget extends HTMLElement {
     const cx = clampAbs(this.cursor.smoothX, 1);
     const cy = clampAbs(this.cursor.smoothY, 1);
     const out = new Map<string, THREE.Quaternion>();
+
+    // Named facial rig (e.g. quadruped-mammal): drive ONLY the head ("neck") + eyes by the gaze
+    // config, not every branch joint. The generic branch look-at below rotates every leaf's parent
+    // (ankles, tail-tip, head) toward the cursor, which on an animal reads as the limbs twitching.
+    const neckBone = bones.find((bone) => bone.name === 'neck' && !bone.virtual);
+    if (neckBone && jointTrack > 0) {
+      const gaze = this.config!.defaults.gaze;
+      const yaw = clampAbs(cx * gaze.maxNeckYaw * jointTrack, gaze.maxNeckYaw);
+      const pitch = clampAbs(cy * gaze.maxNeckPitch * jointTrack, gaze.maxNeckPitch);
+      // Split the look across the neck base + head joint when both exist (quadruped rig), like the
+      // body rig's Neck+Head: FK composes them, so the head REORIENTS by the combined angle with a
+      // natural arc. The head carries the turn about its own joint (turns in place, no sideways
+      // swing); the neck base adds a subtle bend. Driving only the neck base swung the head sideways
+      // on a long lever without it visibly turning ("the neck extends, the head keeps its angle").
+      if (bones.some((bone) => bone.name === 'head' && !bone.virtual)) {
+        out.set('neck', yawPitch(yaw * 0.45, pitch * 0.45));
+        out.set('head', yawPitch(yaw, pitch));
+      } else {
+        out.set('neck', yawPitch(yaw, pitch));
+      }
+      const eyeYaw = clampAbs(cx * gaze.maxEyeYaw * gaze.intensity, gaze.maxEyeYaw);
+      const eyePitch = clampAbs(cy * gaze.maxEyePitch * gaze.intensity, gaze.maxEyePitch);
+      for (const eyeName of ['leftEye', 'rightEye']) {
+        if (bones.some((bone) => bone.name === eyeName)) out.set(eyeName, yawPitch(eyeYaw, eyePitch));
+      }
+      return out;
+    }
+
     if (rootTrack > 0) {
       for (const bone of bones) {
         if (bone.virtual || bone.parentIdx >= 0) continue;

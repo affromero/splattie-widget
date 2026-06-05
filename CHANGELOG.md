@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.1] - 2026-06-05
+
+### Fixed
+- Cursor head-follow now rotates each bone about its **joint pivot** instead of the splat origin. Spark's dual-quaternion skinning stores rotation about the origin, so a rotated head used to slide off-pivot instead of turning; the widget now compensates (`pos' = worldPos + restPos − quat·restPos`) so object/quadruped heads visibly turn toward the cursor.
+- Object/quadruped look-at drives a **split neck + head gaze chain** (neck 0.45×, head 1.0×) composed through forward kinematics, so the head turns naturally without tearing the neck.
+
+### Notes
+- Patch release — the `.splattie` bundle format is unchanged from 0.3.0; only the runtime skinning math. Bundles are re-stamped to `formatVersion` 0.3.1 to satisfy the strict version lock.
+
 ## [0.3.0] - 2026-05-31
 
 ### Added

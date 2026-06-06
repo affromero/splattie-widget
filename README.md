@@ -295,16 +295,16 @@ Built on [Spark 2.0](https://github.com/sparkjsdev/spark) (MIT, World Labs).
 1. **State machine** with per-dimension interpolation (lerp, slerp, ease curves)
 2. **SplatSkinning** (dual quaternion) driving 5 FLAME bones from expression + cursor data (heads)
 3. **SMPL-X skinning** (55-joint LBS) for bodies — head/torso look-at + analytic two-bone arm IK, composed via forward kinematics
-4. **Generic object skinning** for arbitrary skeletons — root/joint cursor-follow, projected skeleton handles, and drag-to-pose chain solving
-5. **Expression basis** - per-splat position offsets written to Spark's packed buffer (half-float, ~20K splats/frame)
+4. **Generic object skinning** for arbitrary skeletons (objects **and animals**) — root/joint cursor-follow, projected skeleton handles, and drag-to-pose chain solving. Quadruped mammals run this path with named `neck`/`head` joints, so the head follows the cursor instead of a terminal joint
+5. **Expression basis** (heads) - per-splat FLAME position offsets written to Spark's packed buffer (half-float, ~20K splats/frame)
 6. **Hit detection** via `readPixels` after render (pixel-perfect)
-7. **Auto-blink** with randomized interval and sine-curve via SplatEdit
+7. **Auto-blink** (heads) with randomized interval and sine-curve via SplatEdit
 8. **Gyroscope** tracking on mobile (iOS permission prompt included)
 </details>
 
 ## Mobile
 
-Touch + gyroscope. Eyes follow device orientation on mobile, touch position on tap. Return to center when finger lifts. iOS motion permission requested automatically.
+Touch + gyroscope drive the same cursor-follow tracking as desktop — eyes for heads, head/torso or rigged joints for bodies, objects, and animals — from device orientation, or touch position on tap. Returns to center when the finger lifts. iOS motion permission requested automatically.
 
 ## Browser Support
 

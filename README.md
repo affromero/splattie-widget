@@ -26,7 +26,7 @@
 
 A web component that makes Gaussian splats **reactive**. One file, one tag. **Heads** track the cursor with their eyes, blink, and emote on hover/click (FLAME rig); **bodies** turn their head and torso toward visitors and pose with two-bone arm IK (SMPL-X rig); **objects** use arbitrary skeletons and sparse LBS weights for cursor-follow and direct pose editing; **animals** (quadruped mammals) ride that same object path with a SMAL-derived skeleton whose named neck/head joints drive cursor-follow head tracking. 60fps, client-side. The widget branches on the bundle's `assetType` (`head`, `body`, or `object`) — same tag for every kind; animals ship as `object` bundles tagged `metadata.category: quadruped_mammal`.
 
-**[See it live at afromero.co](https://afromero.co)** | **[Create your own at splattie.app](https://splattie.app)** | **[Generate them with Splattie](https://github.com/affromero/splattie)**
+**[See it live at afromero.co](https://afromero.co)** | **[Demos + editor at splattie.app](https://splattie.app)** | **[Generate your own from the repo](https://github.com/affromero/splattie)**
 
 ## Quick Start
 
@@ -226,9 +226,11 @@ Most likely to evolve. Without it: sensible defaults (eyes track, gentle float, 
 
 **From scratch**: ZIP a `.ply` with any combination of the optional files.
 
-**From a photo or object image**: run the [Splattie](https://github.com/affromero/splattie)
-backend pipeline for heads (LAM), bodies (LHM), objects (TRELLIS + Puppeteer), or
-animals (TripoSplat + SMAL), then bundle the result. Try it at [splattie.app](https://splattie.app).
+**From a photo or object image**: clone [Splattie](https://github.com/affromero/splattie)
+and run the backend pipeline yourself (needs a GPU) — heads (LAM), bodies (LHM), objects
+(TRELLIS + Puppeteer), or animals (TripoSplat + SMAL) — then bundle the result. The hosted
+[splattie.app](https://splattie.app) doesn't generate assets; it's for browsing the demos
+and editing an existing `.splattie` in the visual editor.
 
 ## Five Dimensions of State
 

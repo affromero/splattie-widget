@@ -24,9 +24,9 @@
   <img src="assets/demo.gif" alt="Splattie Widget Demo" width="600" />
 </p>
 
-A web component that makes Gaussian splats **reactive**. One file, one tag. **Heads** track the cursor with their eyes, blink, and emote on hover/click (FLAME rig); **bodies** turn their head and torso toward visitors and pose with two-bone arm IK (SMPL-X rig); **objects** use arbitrary skeletons and sparse LBS weights for cursor-follow and direct pose editing. 60fps, client-side. The widget branches on the bundle's `assetType` — same tag for heads, bodies, and objects.
+A web component that makes Gaussian splats **reactive**. One file, one tag. **Heads** track the cursor with their eyes, blink, and emote on hover/click (FLAME rig); **bodies** turn their head and torso toward visitors and pose with two-bone arm IK (SMPL-X rig); **objects** use arbitrary skeletons and sparse LBS weights for cursor-follow and direct pose editing; **animals** (quadruped mammals) ride that same object path with a SMAL-derived skeleton whose named neck/head joints drive cursor-follow head tracking. 60fps, client-side. The widget branches on the bundle's `assetType` (`head`, `body`, or `object`) — same tag for every kind; animals ship as `object` bundles tagged `metadata.category: quadruped_mammal`.
 
-**[See it live at afromero.co](https://afromero.co)** | **[Create your own at splattie.app](https://splattie.app)**
+**[See it live at afromero.co](https://afromero.co)** | **[Create your own at splattie.app](https://splattie.app)** | **[Generate them with Splattie](https://github.com/affromero/splattie)**
 
 ## Quick Start
 
@@ -70,6 +70,10 @@ asset.splattie
 │  # object (assetType: object) — arbitrary skeleton rig:
 ├── skeleton.json             # (optional) Object joint hierarchy + rest positions
 ├── lbs_weights.bin           # (optional) Binary sparse per-gaussian LBS weights
+│
+│  # quadruped mammal (assetType: object, metadata.category: quadruped_mammal):
+│  #   reuses the object rig above — skeleton.json carries named neck/head joints
+│  #   (SMAL fit to SuperAnimal keypoints) so the head follows the cursor
 │
 └── states.json               # (optional) Interaction states
 ```
@@ -176,6 +180,12 @@ The binary weights file stores sparse uint16 joint indices and float16 weights f
 Gaussian. The widget projects terminal joints as editor handles, solves simple
 joint-chain rotations when you drag a handle, and uses root/joint cursor-follow
 settings for lightweight interactivity.
+
+**Quadruped mammals** are a special case of this object rig: the backend fits a **SMAL**
+skeleton to **SuperAnimal-Quadruped** keypoints and exports it as a `puppeteer-object` rig
+whose joints include named `neck`/`head`/`nose`. The widget detects those names and drives
+head + eye cursor-follow (head tracking) instead of generic terminal-joint follow. The
+manifest keeps `assetType: object` and sets `metadata.category: "quadruped_mammal"`.
 </details>
 
 <details>
@@ -216,9 +226,9 @@ Most likely to evolve. Without it: sensible defaults (eyes track, gentle float, 
 
 **From scratch**: ZIP a `.ply` with any combination of the optional files.
 
-**From a photo or object image**: run the Splattie backend pipeline for heads
-(LAM), bodies (LHM), or objects (TRELLIS + Puppeteer), then bundle the result.
-Try it at [splattie.app](https://splattie.app).
+**From a photo or object image**: run the [Splattie](https://github.com/affromero/splattie)
+backend pipeline for heads (LAM), bodies (LHM), objects (TRELLIS + Puppeteer), or
+animals (TripoSplat + SMAL), then bundle the result. Try it at [splattie.app](https://splattie.app).
 
 ## Five Dimensions of State
 
@@ -228,7 +238,7 @@ Try it at [splattie.app](https://splattie.app).
 | **Expression** | FLAME blendshapes + bones | Smile on hover, surprise on click |
 | **Camera** | Spherical position | Zoom in on hover |
 | **Rotation** | Pitch/yaw/roll | Tilt head on hover |
-| **Tracking** | Cursor-follow intensity | Heads: eyes/head. Bodies: head/torso. Objects: root/joints |
+| **Tracking** | Cursor-follow intensity | Heads: eyes/head. Bodies: head/torso. Objects: root/joints. Animals: head/eyes |
 
 Interpolated between states with configurable easing and duration.
 
@@ -304,6 +314,9 @@ Chrome, Firefox, Safari, Edge. WebGL 2 required. No COOP/COEP headers needed.
 - [LHM](https://github.com/aigc3d/LHM) (SIGGRAPH 2025) - single-image 3DGS bodies. AIGC3D team
 - [TRELLIS](https://github.com/microsoft/TRELLIS) - single-image 3D asset reconstruction. Microsoft.
 - [Puppeteer](https://github.com/snap-research/Puppeteer) - automatic skeleton and skinning for generated 3D assets. Snap Research.
+- [TripoSplat](https://github.com/VAST-AI-Research/TripoSplat) - single-image image-to-3D-gaussian reconstruction (default animal backend). VAST-AI Research.
+- [SMAL](https://smal.is.tue.mpg.de/) - parametric quadruped skeleton + shape (animals). Zuffi, Kanazawa, Jacobs, Black (MPI)
+- [SuperAnimal-Quadruped / DeepLabCut](https://github.com/DeepLabCut/DeepLabCut) - animal pose keypoints the SMAL fit anchors to. Mathis lab et al.
 - [FLAME](https://flame.is.tue.mpg.de/) - face model (heads). Tianye Li, Timo Bolkart, Michael J. Black, Hao Li, Javier Romero
 - [SMPL-X](https://smpl-x.is.tue.mpg.de/) - body model (bodies). Pavlakos, Choutas, Ghorbani, Bolkart, Osman, Tzionas, Black (MPI)
 - [Spark 2.0](https://github.com/sparkjsdev/spark) - World Labs (MIT)

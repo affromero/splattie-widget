@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2] - 2026-08-13
+
+### Fixed
+- Spark shader generation now avoids passing struct fields directly to GLSL `out` and `inout` parameters, preventing an ANGLE-to-Metal linker failure on physical iPhones running Safari 27.
+
+### Notes
+- Patch release; the `.splattie` schema is unchanged. Bundles are re-stamped to `formatVersion` 0.3.2 because pre-1.0 bundles are strictly version-locked to the widget runtime.
+
 ## [0.3.1] - 2026-06-05
 
 ### Fixed

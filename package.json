@@ -59,7 +59,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@sparkjsdev/spark": "^2.0.0",
+    "@sparkjsdev/spark": "github:affromero/spark#147a2ef100e45b72b32cc501beea55ad9ea8aeda",
     "jszip": "^3.10.1",
     "three": ">=0.180.0"
   },

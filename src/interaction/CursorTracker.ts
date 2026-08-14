@@ -13,25 +13,39 @@ export class CursorTracker {
   private useGyro = false;
   private baseBeta: number | null = null;
   private baseGamma: number | null = null;
+  private touchResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   attach(element: HTMLElement): void {
     this.element = element;
+    document.addEventListener('pointerdown', this.onMove);
     document.addEventListener('pointermove', this.onMove);
     document.addEventListener('pointerleave', this.onLeave);
     document.addEventListener('pointerup', this.onPointerUp);
     document.addEventListener('pointercancel', this.onPointerUp);
 
     if ('ontouchstart' in window && window.DeviceOrientationEvent) {
-      this.requestGyro();
+      const DOE = DeviceOrientationEvent as unknown as {
+        requestPermission?: () => Promise<string>;
+      };
+      if (DOE.requestPermission) {
+        // iOS grants motion access only from a user gesture — asking at
+        // attach time rejects silently. Wait for the first touch instead.
+        document.addEventListener('pointerdown', this.onFirstGesture, { once: true });
+      } else {
+        this.requestGyro();
+      }
     }
   }
 
   detach(): void {
+    document.removeEventListener('pointerdown', this.onMove);
     document.removeEventListener('pointermove', this.onMove);
     document.removeEventListener('pointerleave', this.onLeave);
     document.removeEventListener('pointerup', this.onPointerUp);
     document.removeEventListener('pointercancel', this.onPointerUp);
+    document.removeEventListener('pointerdown', this.onFirstGesture);
     window.removeEventListener('deviceorientation', this.onGyro);
+    if (this.touchResetTimer !== null) clearTimeout(this.touchResetTimer);
     this.element = null;
   }
 
@@ -46,8 +60,16 @@ export class CursorTracker {
     this.smoothY = expSmooth(this.smoothY, this.ndcY, dt, tau);
   }
 
+  private onFirstGesture = (): void => {
+    this.requestGyro();
+  };
+
   private onMove = (e: PointerEvent): void => {
     if (!this.element) return;
+    if (this.touchResetTimer !== null) {
+      clearTimeout(this.touchResetTimer);
+      this.touchResetTimer = null;
+    }
     const rect = this.element.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
@@ -70,9 +92,14 @@ export class CursorTracker {
 
   private onPointerUp = (e: PointerEvent): void => {
     if (e.pointerType === 'touch' && !this.useGyro) {
-      this.isOnPage = false;
-      this.ndcX = 0;
-      this.ndcY = 0;
+      // Grace period so the click event that follows touchend still sees the
+      // tap's hover state — the hit-test loop would otherwise zero it first.
+      this.touchResetTimer = setTimeout(() => {
+        this.touchResetTimer = null;
+        this.isOnPage = false;
+        this.ndcX = 0;
+        this.ndcY = 0;
+      }, 150);
     }
   };
 

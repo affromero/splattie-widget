@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.3] - 2026-08-14
+
+### Fixed
+- Touch devices are now interactive. Taps register: `pointerdown` feeds the cursor tracker (a quick tap fires no `pointermove`), and a 150ms grace period after `touchend` keeps the hover state alive long enough for the trailing `click` to hit-test true. Touch drags track: the widget host sets `touch-action: none` so iOS no longer converts the drag into page scroll and cancels the pointer stream.
+- iOS gyro head tracking works. The `DeviceOrientationEvent.requestPermission()` call moved from attach time (where iOS rejects it silently for lacking a user gesture) to the first touch on the page.
+
+### Notes
+- Patch release; the `.splattie` schema is unchanged. Bundles are re-stamped to `formatVersion` 0.3.3 because pre-1.0 bundles are strictly version-locked to the widget runtime.
+
 ## [0.3.2] - 2026-08-13
 
 ### Fixed

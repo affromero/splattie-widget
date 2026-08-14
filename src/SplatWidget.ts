@@ -314,6 +314,9 @@ export class SplatWidget extends HTMLElement {
       this.style.display = 'block';
       this.style.position = 'relative';
       this.style.overflow = 'hidden';
+      // Without this, iOS turns a touch-drag into page scroll and cancels
+      // the pointer stream before the tracker sees a single move.
+      this.style.touchAction = 'none';
       if (!this.style.width) this.style.width = this.getAttribute('width') ?? '100%';
       if (!this.style.height) this.style.height = this.getAttribute('height') ?? '400px';
 

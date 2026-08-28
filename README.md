@@ -6,12 +6,16 @@
 
 **Interactive rigged 3D Gaussian Splatting - like Rive/Lottie for 3D**
 
+[![Release](https://img.shields.io/github/v/release/affromero/splattie-widget?display_name=tag&sort=semver)](https://github.com/affromero/splattie-widget/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/affromero/splattie-widget/ci.yml?branch=main&label=CI)](https://github.com/affromero/splattie-widget/actions/workflows/ci.yml)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/affromero/splattie-widget/codeql.yml?branch=main&label=CodeQL)](https://github.com/affromero/splattie-widget/actions/workflows/codeql.yml)
+[![gitleaks](https://img.shields.io/github/actions/workflow/status/affromero/splattie-widget/gitleaks.yml?branch=main&label=gitleaks)](https://github.com/affromero/splattie-widget/actions/workflows/gitleaks.yml)
+[![Dependabot](https://img.shields.io/badge/Dependabot-enabled-025E8C?logo=dependabot&logoColor=white)](.github/dependabot.yml)
 [![npm](https://img.shields.io/npm/v/@afromero/splattie-widget?color=blue)](https://www.npmjs.com/package/@afromero/splattie-widget)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue?logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![Spark](https://img.shields.io/badge/Spark_2.0-MIT-green)](https://github.com/sparkjsdev/spark)
 [![Three.js](https://img.shields.io/badge/Three.js-r170+-black?logo=three.js)](https://threejs.org)
-[![Tests](https://img.shields.io/badge/tests-91_passing-brightgreen)]()
 [![Bundle](https://img.shields.io/badge/format-.splattie-orange)]()
 
 [Quick Start](#quick-start) · [Format Spec](FORMAT.md) · [API](#api) · [Editor](#visual-editor) · [How It Works](#how-it-works)
